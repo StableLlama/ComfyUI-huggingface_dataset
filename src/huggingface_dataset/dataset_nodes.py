@@ -476,7 +476,7 @@ class LoadHuggingFaceDataset(ComfyNodeABC):
     RETURN_TYPES = ("HUGGINGFACE_DATASET", IO.ANY)
     RETURN_NAMES = ("dataset", "rows")
     OUTPUT_IS_LIST = (False, True)
-    CATEGORY = "Hugging Face 🤗/Dataset"
+    CATEGORY = "Hugging Face 🤗"
     DESCRIPTION = cleandoc(__doc__ or "")
     FUNCTION = "load"
 

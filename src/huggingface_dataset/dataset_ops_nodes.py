@@ -40,7 +40,7 @@ from .dataset_nodes import _materialize_rows, _materialize_rows_stream, _to_pyth
 HUGGINGFACE_DATASET = "HUGGINGFACE_DATASET"
 
 #: Category shared with the loader, so all dataset nodes group together.
-_CATEGORY = "Hugging Face 🤗/Dataset"
+_CATEGORY = "Hugging Face 🤗"
 
 #: Declarative operators offered by the filter node. Compare/membership
 #: operators coerce the widget ``value`` to the type of the actual cell.
