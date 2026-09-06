@@ -135,6 +135,34 @@ def test_node_metadata():
     assert callable(getattr(node, node.FUNCTION))
 
 
+def test_jpeg_xl_flag_is_boolean():
+    assert isinstance(nodes.JPEG_XL_AVAILABLE, bool)
+
+
+def test_jpeg_xl_enabled_when_plugin_is_importable(monkeypatch):
+    import sys
+    import types
+
+    monkeypatch.setitem(sys.modules, "pillow_jxl", types.ModuleType("pillow_jxl"))
+
+    assert nodes._pillow_jxl_importable() is True
+
+
+def test_jpeg_xl_disabled_when_plugin_is_missing(monkeypatch):
+    import builtins
+
+    real_import = builtins.__import__
+
+    def block_pillow_jxl(name: str, *args: Any, **kwargs: Any) -> Any:
+        if name == "pillow_jxl":
+            raise ImportError("pillow-jxl-plugin is not installed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", block_pillow_jxl)
+
+    assert nodes._pillow_jxl_importable() is False
+
+
 # --------------------------------------------------------------------------- #
 # Hub loading
 # --------------------------------------------------------------------------- #

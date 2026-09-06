@@ -5,6 +5,7 @@ custom node (ComfyUI imports the ``__init__.py`` of the folder under
 ``custom_nodes/``).
 """
 
+import logging
 import os
 import sys
 
@@ -23,7 +24,18 @@ _SRC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "src"))
 if _SRC_DIR not in sys.path:
     sys.path.insert(0, _SRC_DIR)
 
+from huggingface_dataset import JPEG_XL_AVAILABLE  # noqa: E402
 from huggingface_dataset import NODE_CLASS_MAPPINGS  # noqa: E402
 from huggingface_dataset import NODE_DISPLAY_NAME_MAPPINGS  # noqa: E402
+
+# Announce the pack on the ComfyUI console when it is loaded at startup and make
+# JPEG XL availability explicit, so the user knows whether installing the
+# optional `pillow-jxl-plugin` would add JPEG XL image support.
+_LOGGER = logging.getLogger("huggingface_dataset")
+_LOGGER.info(
+    "Hugging Face dataset custom nodes loaded (%d node) - JPEG XL image support: %s",
+    len(NODE_CLASS_MAPPINGS),
+    "enabled" if JPEG_XL_AVAILABLE else "disabled",
+)
 
 WEB_DIRECTORY = "./web"

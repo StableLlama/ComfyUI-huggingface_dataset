@@ -27,6 +27,21 @@ in two forms:
   pip install datasets
   ```
 
+> [!NOTE]
+> **JPEG XL images.** If you want to load datasets whose images are stored as
+> **JPEG XL** (`.jxl`), make sure the Pillow JPEG XL plugin is installed as
+> well.
+>
+> ```bash
+> pip install pillow-jxl-plugin
+> ```
+>
+> The plugin is **optional** and you must install it yourself: the node starts
+> and runs fine without it, only the JPEG XL images then fail to decode. The
+> ComfyUI startup log tells you whether it is active — it prints
+> `JPEG XL image support: enabled` when the plugin is installed and
+> `JPEG XL image support: disabled` otherwise.
+
 ## Quickstart
 
 ### Recommended Installation (ComfyUI-Manager)

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Datasets whose images are JPEG XL (`.jxl`) can now be decoded: the pack
+  opportunistically imports `pillow_jxl` (the Pillow JPEG XL plugin from
+  `pip install pillow-jxl-plugin`) so it registers its decoder with Pillow when
+  installed. The plugin stays optional — without it, loading keeps working and
+  only the JPEG XL images fail to decode.
+- The ComfyUI startup log now reports that the Hugging Face dataset custom nodes
+  were loaded, together with whether JPEG XL image support is `enabled` or
+  `disabled`.
+
 ### Changed
 
 - Drop the `trust_remote_code` input: modern `datasets` no longer supports

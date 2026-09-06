@@ -25,6 +25,33 @@ from os import path as os_path
 from typing import Any
 
 
+# Optional JPEG XL image support.
+#
+# ``datasets`` decodes images with Pillow, which only auto-registers its
+# *built-in* formats. JPEG XL (``.jxl``) support comes from a third-party
+# Pillow plugin - ``pillow-jxl-plugin`` (import name ``pillow_jxl``) - whose
+# decoder registers itself with Pillow as an import side effect. Nothing in the
+# ``datasets`` load path imports that module, so this pack does it here: with
+# the plugin installed, JPEG XL images (even extensionless cached blobs) decode
+# fine; without it, loading still works and only the JPEG XL images fail to
+# decode (see huggingface/datasets#8537).
+def _pillow_jxl_importable() -> bool:
+    """Import ``pillow_jxl`` and report whether Pillow's JPEG XL decoder is available.
+
+    The import itself is the whole point: it registers the JPEG XL codec with
+    Pillow. The plugin is optional, so a missing one is silently ignored.
+    """
+    try:
+        import pillow_jxl  # noqa: F401  # type: ignore[import-not-found, import-untyped]  # side-effect: registers the JPEG XL codec
+    except ImportError:
+        return False
+    return True
+
+
+#: Whether Pillow can decode JPEG XL images (``pip install pillow-jxl-plugin``).
+JPEG_XL_AVAILABLE = _pillow_jxl_importable()
+
+
 class IO:
     """Node I/O type constants.
 
