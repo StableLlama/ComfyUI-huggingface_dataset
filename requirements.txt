@@ -1,0 +1,7 @@
+# Runtime dependencies of the Hugging Face dataset custom nodes.
+#
+# This file mirrors `[project] dependencies` in pyproject.toml and is what
+# git-based installers (ComfyUI-Manager, manual clones) read to install the
+# dependency automatically. Installers that use the Comfy Registry / pip read
+# the pyproject.toml declaration instead. If you change one, change the other.
+datasets

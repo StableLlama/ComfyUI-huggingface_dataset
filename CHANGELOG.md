@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Per-node in-app documentation (`web/docs/<NodeName>.md` for every node): each
+  node now shows a rich help page in the ComfyUI UI (see ComfyUI's "Add node
+  docs" help-page feature).
+- Ready-made example workflows under `example_workflows/` that appear in
+  ComfyUI's template browser (`Workflow → Browse Templates`): filter the
+  positive IMDb reviews to a Data List, add a row index / keep columns and
+  export to a LIST, and a streaming skip/take example — each with a thumbnail.
+- A root `requirements.txt` so git-based installers (ComfyUI-Manager, manual
+  clones) install the `datasets` dependency automatically, mirroring the
+  `pyproject.toml` dependency already used by Comfy-Registry installs.
+- Every node input and output now carries a tooltip (the `tooltip` option in
+  `INPUT_TYPES` plus `OUTPUT_TOOLTIPS`), so hovering a widget shows help and the
+  ComfyUI node documentation panel lists rich parameter descriptions instead of
+  empty rows.
 - A family of transform nodes that consume the opaque `HUGGINGFACE_DATASET`
   value (the loader's `dataset` output) and expose the data-wrangling methods of
   the `datasets` library as ComfyUI nodes, so a dataset can be shaped *before*
@@ -44,6 +58,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- README: install instructions state that the `datasets` dependency is
+  installed automatically, cover ComfyUI-Manager / Registry installs, document
+  the new template workflows, and use `pip install -r requirements.txt` for
+  manual installs (plus a corrected strict-`mypy` command).
+- Packaging metadata (`pyproject.toml`): declare `requires-python = ">=3.10"`
+  and add a Documentation URL to follow Comfy Registry metadata best
+  practices.
+- Node display names are shortened to a `🤗` prefix for easier menus (e.g.
+  `🤗 Dataset Loader` instead of `Hugging Face Dataset Loader`); the node menu
+  category stays `Hugging Face 🤗`. All docs and the README were updated to
+  match.
 - Drop the `trust_remote_code` input: modern `datasets` no longer supports
   executing Hub loading scripts and merely ignores the flag (logging a
   "trust_remote_code is not supported anymore" error), so the option was dead

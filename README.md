@@ -1,8 +1,17 @@
 # Hugging Face Dataset Loader
 
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](./LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](./pyproject.toml)
+[![ComfyUI](https://img.shields.io/badge/ComfyUI-custom%20nodes-87CEEB.svg)](https://docs.comfy.org/custom-nodes/intro)
+
 A custom [ComfyUI](https://docs.comfy.org/get_started) node that loads a
 [Hugging Face](https://huggingface.co/) dataset and makes it available inside
 ComfyUI for further processing.
+
+Every node ships **in-app documentation and parameter tooltips** — hover a node
+and open its help (info) panel, or view the node's page in the **Node Library**
+— and ready-made **example workflows** are available from the template browser
+(`Workflow → Browse Templates`).
 
 It loads a dataset from the Hugging Face Hub or from local/remote files using the
 [`datasets`](https://huggingface.co/docs/datasets/loading) library and exposes it
@@ -25,12 +34,15 @@ be shaped *before* its rows are materialized — see
 ## Requirements
 
 - [ComfyUI](https://docs.comfy.org/get_started)
-- Python package `datasets` (Hugging Face). The node imports it **lazily**, so
-  ComfyUI still starts when it is missing — you only get a clear error when you
-  actually try to load a dataset:
+- Python package `datasets` (Hugging Face). It is **installed automatically**
+  when you install this pack through ComfyUI-Manager, the Comfy Registry or a
+  `pip install` of the repo — there is nothing extra to do. The nodes import it
+  **lazily**, so ComfyUI still starts even if it is missing; you only get a
+  clear install message when you actually try to load a dataset. When you
+  installed from a bare `git clone` without an installer, run once:
 
   ```bash
-  pip install datasets
+  pip install -r requirements.txt   # or: pip install datasets
   ```
 
 > [!NOTE]
@@ -50,11 +62,14 @@ be shaped *before* its rows are materialized — see
 
 ## Quickstart
 
-### Recommended Installation (ComfyUI-Manager)
+### Recommended Installation (ComfyUI-Manager or the Comfy Registry)
 
-1. Install [ComfyUI-Manager](https://github.com/ltdrdata/ComfyUI-Manager).
-2. Look up the **"Hugging Face dataset"** extension in ComfyUI-Manager and install it.
+1. Install [ComfyUI-Manager](https://github.com/ltdrdata/ComfyUI-Manager) (or
+   use the **Registry** tab in ComfyUI Desktop / `comfy node install`).
+2. Look up the **"Hugging Face dataset"** extension and install it.
 3. Restart ComfyUI.
+
+The `datasets` dependency is installed for you automatically.
 
 ### Alternative (Manual Installation)
 
@@ -63,9 +78,9 @@ be shaped *before* its rows are materialized — see
    ```bash
    git clone https://github.com/StableLlama/ComfyUI-huggingface_dataset.git
    ```
-3. Install the `datasets` dependency into ComfyUI's Python environment:
+3. Install the runtime dependencies into ComfyUI's Python environment:
    ```bash
-   pip install datasets
+   pip install -r requirements.txt
    ```
 4. Restart ComfyUI.
 
@@ -166,20 +181,20 @@ traceback: disable `streaming` on the loader for those.
 
 | Node | What it does | Streaming? |
 | --- | --- | --- |
-| **Hugging Face Dataset Shuffle** | Randomly reorders the rows (`shuffle(seed)`). | ✅ |
-| **Hugging Face Dataset Skip** | Drops the first `n` rows (`skip(n)`). | ✅ |
-| **Hugging Face Dataset Take** | Keeps only the first `n` rows (`take(n)`). | ✅ |
-| **Hugging Face Dataset Sort** | Sorts the rows by a `column` (`sort`). | loaded only |
-| **Hugging Face Dataset Shard** | Keeps shard `index` of the dataset split into `num_shards` (`shard`). | ✅ |
-| **Hugging Face Dataset Select Rows** | Keeps rows by `indices` — comma-separated `0,2,4` and/or slices `0:100`, `0:100:2` (`select`). | loaded only |
-| **Hugging Face Dataset Select Columns** | Keeps only the comma-separated `columns` (`select_columns`). | ✅ |
-| **Hugging Face Dataset Remove Columns** | Removes the comma-separated `columns` (`remove_columns`). | ✅ |
-| **Hugging Face Dataset Rename Column** | Renames one column (`rename_column`). | ✅ |
-| **Hugging Face Dataset Flatten** | Expands nested columns into top-level ones (`flatten`). | loaded only |
-| **Hugging Face Dataset Filter** | Keeps rows whose `column` satisfies an `operator` against `value` (`filter`). | ✅ |
-| **Hugging Face Dataset Map Column** | Adds/replaces `column` per row from a `constant`, a copy of another column, or the `row index` (`map`). | ✅ |
-| **Hugging Face Dataset Train/Test Split** | Randomly splits into `train` and `test` outputs (`train_test_split`). | loaded only |
-| **Hugging Face Dataset Unique** | Returns the unique `column` values as a *Data List* (`unique`). | loaded only |
+| **🤗 Dataset Shuffle** | Randomly reorders the rows (`shuffle(seed)`). | ✅ |
+| **🤗 Dataset Skip** | Drops the first `n` rows (`skip(n)`). | ✅ |
+| **🤗 Dataset Take** | Keeps only the first `n` rows (`take(n)`). | ✅ |
+| **🤗 Dataset Sort** | Sorts the rows by a `column` (`sort`). | loaded only |
+| **🤗 Dataset Shard** | Keeps shard `index` of the dataset split into `num_shards` (`shard`). | ✅ |
+| **🤗 Dataset Select Rows** | Keeps rows by `indices` — comma-separated `0,2,4` and/or slices `0:100`, `0:100:2` (`select`). | loaded only |
+| **🤗 Dataset Select Columns** | Keeps only the comma-separated `columns` (`select_columns`). | ✅ |
+| **🤗 Dataset Remove Columns** | Removes the comma-separated `columns` (`remove_columns`). | ✅ |
+| **🤗 Dataset Rename Column** | Renames one column (`rename_column`). | ✅ |
+| **🤗 Dataset Flatten** | Expands nested columns into top-level ones (`flatten`). | loaded only |
+| **🤗 Dataset Filter** | Keeps rows whose `column` satisfies an `operator` against `value` (`filter`). | ✅ |
+| **🤗 Dataset Map Column** | Adds/replaces `column` per row from a `constant`, a copy of another column, or the `row index` (`map`). | ✅ |
+| **🤗 Dataset Train/Test Split** | Randomly splits into `train` and `test` outputs (`train_test_split`). | loaded only |
+| **🤗 Dataset Unique** | Returns the unique `column` values as a *Data List* (`unique`). | loaded only |
 
 **Filter operators:** `==`, `!=`, `<`, `<=`, `>`, `>=` (the `value` text is
 coerced to the column's type, so numeric columns compare with plain numbers),
@@ -193,8 +208,8 @@ dataset (fully-loaded **or** streaming) can be turned into both:
 
 | Node | Output | Description |
 | --- | --- | --- |
-| **Hugging Face Dataset To LIST** | `LIST` | One Python list value of all rows (a *LIST* as Basic data handling defines it, so it feeds `List length`, `List get item`, ...). With a `column` set, the list holds that column's values instead of row dicts. |
-| **Hugging Face Dataset To Data List** | `*` (Data List) | The same rows exposed as a ComfyUI *Data List* (like the loader's `rows` output): Basic *Data List* nodes receive the whole list in one call, other nodes run once per row. |
+| **🤗 Dataset To LIST** | `LIST` | One Python list value of all rows (a *LIST* as Basic data handling defines it, so it feeds `List length`, `List get item`, ...). With a `column` set, the list holds that column's values instead of row dicts. |
+| **🤗 Dataset To Data List** | `*` (Data List) | The same rows exposed as a ComfyUI *Data List* (like the loader's `rows` output): Basic *Data List* nodes receive the whole list in one call, other nodes run once per row. |
 
 Both honour a `limit` widget (`-1` = all rows) — handy for pulling only the
 first rows of a large streaming dataset.
@@ -206,11 +221,25 @@ feed the result to a Basic-data-handling *Data List*:
 
 ```mermaid
 flowchart LR
-    A[Load Hugging Face Dataset<br/>path=stanfordnlp/imdb<br/>split=train] -->|dataset| B[Hugging Face Dataset Filter<br/>column=label operator== value=1]
-    B -->|dataset| C[Hugging Face Dataset Map Column<br/>column=row_id operation=row index]
-    C -->|dataset| D[Hugging Face Dataset To Data List]
+    A[Load Hugging Face Dataset<br/>path=stanfordnlp/imdb<br/>split=train] -->|dataset| B[🤗 Dataset Filter<br/>column=label operator== value=1]
+    B -->|dataset| C[🤗 Dataset Map Column<br/>column=row_id operation=row index]
+    C -->|dataset| D[🤗 Dataset To Data List]
     D -->|rows| E[Basic: Data List length]
 ```
+
+## Example workflow templates
+
+The repository ships ready-made workflows under
+[`example_workflows/`](./example_workflows). Once the pack is installed they
+appear in ComfyUI's template browser (`Workflow → Browse Templates`) under the
+**Hugging Face dataset** entry:
+
+- `imdb_filter_to_data_list` — load IMDb, keep only positive reviews and expose
+  them as a Data List.
+- `imdb_map_select_to_list` — add a row index, keep the `text` column and
+  export it as a LIST of strings.
+- `imdb_streaming_skip_take` — load IMDb in streaming mode, skip/take rows and
+  materialize a Data List without a full download.
 
 ## Development
 
@@ -220,7 +249,7 @@ python -m ruff check .
 python -m ruff format .
 
 # Type check (strict)
-python -m mypy .
+python -m mypy src tests
 
 # Tests (no network / no datasets required)
 python -m pytest tests/

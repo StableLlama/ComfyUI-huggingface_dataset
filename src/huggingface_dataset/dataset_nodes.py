@@ -461,21 +461,73 @@ class LoadHuggingFaceDataset(ComfyNodeABC):
     def INPUT_TYPES(cls) -> dict[str, Any]:
         return {
             "required": {
-                "path": (IO.STRING, {"default": "", "multiline": False}),
-                "loader": (_LOADER_CHOICES, {"default": "auto"}),
+                "path": (
+                    IO.STRING,
+                    {
+                        "default": "",
+                        "multiline": False,
+                        "tooltip": "Hub dataset id (e.g. stanfordnlp/imdb), or a local/remote file, glob or dataset directory.",
+                    },
+                ),
+                "loader": (
+                    _LOADER_CHOICES,
+                    {
+                        "default": "auto",
+                        "tooltip": "How to read the source: 'auto' infers from the file extension, 'hub' loads a Hub id, or pick a file builder (csv/json/parquet/arrow/text).",
+                    },
+                ),
                 # A dropdown; the frontend swaps the fallback options for the
                 # dataset's real split names once `path`/`config`/... are known.
-                "split": (_FALLBACK_SPLITS, {"default": _DEFAULT_SPLIT}),
-                "config": (IO.STRING, {"default": "", "multiline": False}),
-                "revision": (IO.STRING, {"default": "", "multiline": False}),
-                "streaming": (IO.BOOLEAN, {"default": False}),
-                "limit": (IO.INT, {"default": -1, "min": -1, "max": INT_MAX, "step": 1}),
+                "split": (
+                    _FALLBACK_SPLITS,
+                    {
+                        "default": _DEFAULT_SPLIT,
+                        "tooltip": "Split to load. The dropdown lists the splits of the selected source; slicing like 'train[:100]' still works.",
+                    },
+                ),
+                "config": (
+                    IO.STRING,
+                    {
+                        "default": "",
+                        "multiline": False,
+                        "tooltip": "Config/subset name for Hub datasets that have several configs (e.g. glue + mrpc).",
+                    },
+                ),
+                "revision": (
+                    IO.STRING,
+                    {
+                        "default": "",
+                        "multiline": False,
+                        "tooltip": "Optional Hub revision: tag, branch name, or commit hash.",
+                    },
+                ),
+                "streaming": (
+                    IO.BOOLEAN,
+                    {
+                        "default": False,
+                        "tooltip": "Load the split lazily as an IterableDataset instead of downloading/caching it fully.",
+                    },
+                ),
+                "limit": (
+                    IO.INT,
+                    {
+                        "default": -1,
+                        "min": -1,
+                        "max": INT_MAX,
+                        "step": 1,
+                        "tooltip": "Maximum number of rows to materialize into the 'rows' Data List; -1 = all.",
+                    },
+                ),
             }
         }
 
     RETURN_TYPES = ("HUGGINGFACE_DATASET", IO.ANY)
     RETURN_NAMES = ("dataset", "rows")
     OUTPUT_IS_LIST = (False, True)
+    OUTPUT_TOOLTIPS = (
+        "Raw datasets.Dataset of the split (a streaming IterableDataset with 'streaming' on); feed it into the 🤗 dataset nodes.",
+        "ComfyUI Data List of row dicts (one dict per row), capped by 'limit'.",
+    )
     CATEGORY = "Hugging Face 🤗"
     DESCRIPTION = cleandoc(__doc__ or "")
     FUNCTION = "load"
@@ -519,5 +571,5 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "LoadHuggingFaceDataset": "Hugging Face Dataset Loader",
+    "LoadHuggingFaceDataset": "🤗 Dataset Loader",
 }

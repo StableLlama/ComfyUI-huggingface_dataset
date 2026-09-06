@@ -121,7 +121,7 @@ def _install_fake(monkeypatch: pytest.MonkeyPatch, result: Any = None) -> FakeDa
 
 def test_node_is_registered():
     assert NODE_CLASS_MAPPINGS["LoadHuggingFaceDataset"] is LoadHuggingFaceDataset
-    assert NODE_DISPLAY_NAME_MAPPINGS["LoadHuggingFaceDataset"] == "Hugging Face Dataset Loader"
+    assert NODE_DISPLAY_NAME_MAPPINGS["LoadHuggingFaceDataset"] == "🤗 Dataset Loader"
 
 
 def test_node_metadata():
@@ -133,6 +133,14 @@ def test_node_metadata():
     assert node.OUTPUT_IS_LIST == (False, True)
     assert node.FUNCTION == "load"
     assert callable(getattr(node, node.FUNCTION))
+
+
+def test_node_tooltips():
+    node = _make_node()
+    for name, (_type, options) in node.INPUT_TYPES()["required"].items():
+        assert options.get("tooltip"), f"{name} is missing a tooltip"
+    assert len(node.OUTPUT_TOOLTIPS) == len(node.RETURN_TYPES)
+    assert all(tip.strip() for tip in node.OUTPUT_TOOLTIPS)
 
 
 def test_jpeg_xl_flag_is_boolean():

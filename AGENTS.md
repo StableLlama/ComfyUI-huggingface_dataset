@@ -21,8 +21,15 @@ GitHub name "ComfyUI-huggingface_dataset" the folder is not a valid Python
 package name).
 - `tests/` — pytest suite (no network / no `datasets` install needed; the lazy
   `_require_datasets()` helper is monkeypatched).
-- `web/` — frontend assets: icon (`img/`) and the split-dropdown extension
-  (`js/hf_dataset_splits.js`, auto-loaded by ComfyUI from the `WEB_DIRECTORY`).
+- `web/` — frontend assets: icon (`img/`), the split-dropdown extension
+  (`js/hf_dataset_splits.js`, auto-loaded by ComfyUI from the `WEB_DIRECTORY`),
+  and per-node in-app help pages (`docs/<NodeName>.md` — one file per key in
+  `NODE_CLASS_MAPPINGS`, shown by ComfyUI's "node docs" feature).
+- `example_workflows/` — workflow templates (+ same-name `*.jpg` thumbnails)
+  that appear in ComfyUI's template browser (`Workflow → Browse Templates`).
+- `requirements.txt` — mirrors `[project] dependencies` in `pyproject.toml` so
+  ComfyUI-Manager / git installers auto-install the runtime dependency; the
+  registry reads the `pyproject.toml` declaration. Keep the two in sync.
 - `pyproject.toml` — package metadata, Comfy registry config (`[tool.comfy]`),
   and tool config (ruff / mypy / pytest).
 - `CHANGELOG.md` — release notes in Keep-a-Changelog format; the publish
@@ -66,6 +73,11 @@ package name).
   is missing and raises a clean `ValueError` listing the available splits
   otherwise - and surfaces the lazy "pip install datasets" message. No opaque
   `datasets` tracebacks reach the ComfyUI GUI.
+- **Node display names & tooltips:** `NODE_DISPLAY_NAME_MAPPINGS` use a short
+  `🤗 Dataset …` prefix (e.g. `🤗 Dataset Loader`) while `CATEGORY` stays
+  `Hugging Face 🤗`; every required input carries a `tooltip` in its options and
+  every node sets `OUTPUT_TOOLTIPS` (shown in the ComfyUI help/docs panel).
+  Keep this up when adding nodes.
 - ComfyUI imports are guarded with a fallback `IO`/`ComfyNodeABC` so tests run
   without ComfyUI.
 

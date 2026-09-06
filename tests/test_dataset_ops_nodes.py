@@ -235,8 +235,21 @@ def test_op_metadata_shape():
         assert inputs["dataset"][0] == "HUGGINGFACE_DATASET"
         assert node_class.RETURN_TYPES == ("HUGGINGFACE_DATASET",)
         assert node_class.RETURN_NAMES == ("dataset",)
-        assert node_class.CATEGORY == "HuggingFace/Dataset"
+        assert node_class.CATEGORY == "Hugging Face 🤗"
         assert callable(getattr(node_class(), node_class.FUNCTION))
+
+
+def test_ops_tooltips_present():
+    for name, node_class in ops.NODE_CLASS_MAPPINGS.items():
+        for kind in ("required", "optional"):
+            for input_name, spec in node_class.INPUT_TYPES().get(kind, {}).items():
+                if isinstance(spec, tuple) and len(spec) > 1:
+                    options = spec[1]
+                    assert options.get("tooltip"), f"{name}.{input_name} is missing a tooltip"
+        tips = getattr(node_class, "OUTPUT_TOOLTIPS", None)
+        assert tips is not None, f"{name} is missing OUTPUT_TOOLTIPS"
+        assert len(tips) == len(node_class.RETURN_TYPES), f"{name} OUTPUT_TOOLTIPS length mismatch"
+        assert all(tip.strip() for tip in tips)
 
 
 def test_special_nodes_metadata():

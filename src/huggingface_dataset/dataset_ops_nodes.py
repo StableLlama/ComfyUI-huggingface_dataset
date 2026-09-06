@@ -99,7 +99,7 @@ def _require_method(dataset: Any, name: str) -> None:
         raise ValueError(
             "The value passed to this node is not a Hugging Face dataset "
             f"(it has no {name!r} method). Connect the 'dataset' output of the "
-            "'Hugging Face Dataset Loader' node, or of another dataset node."
+            "'🤗 Dataset Loader' node, or of another dataset node."
         )
 
 
@@ -373,13 +373,26 @@ class HFDatasetShuffle(ComfyNodeABC):
     def INPUT_TYPES(cls) -> dict[str, Any]:
         return {
             "required": {
-                "dataset": (HUGGINGFACE_DATASET, {}),
-                "seed": (IO.INT, {"default": 0, "min": 0, "max": INT_MAX, "step": 1}),
+                "dataset": (
+                    HUGGINGFACE_DATASET,
+                    {"tooltip": "Input dataset to shuffle (from the 🤗 Dataset Loader or another dataset node)."},
+                ),
+                "seed": (
+                    IO.INT,
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": INT_MAX,
+                        "step": 1,
+                        "tooltip": "Random seed for a reproducible shuffle; required when the input is streaming.",
+                    },
+                ),
             }
         }
 
     RETURN_TYPES = (HUGGINGFACE_DATASET,)
     RETURN_NAMES = ("dataset",)
+    OUTPUT_TOOLTIPS = ("The shuffled dataset.",)
     CATEGORY = _CATEGORY
     DESCRIPTION = cleandoc(__doc__ or "")
     FUNCTION = "shuffle"
@@ -400,13 +413,26 @@ class HFDatasetSkip(ComfyNodeABC):
     def INPUT_TYPES(cls) -> dict[str, Any]:
         return {
             "required": {
-                "dataset": (HUGGINGFACE_DATASET, {}),
-                "n": (IO.INT, {"default": 1, "min": 0, "max": INT_MAX, "step": 1}),
+                "dataset": (
+                    HUGGINGFACE_DATASET,
+                    {"tooltip": "Input dataset to drop rows from (from the 🤗 Dataset Loader or another dataset node)."},
+                ),
+                "n": (
+                    IO.INT,
+                    {
+                        "default": 1,
+                        "min": 0,
+                        "max": INT_MAX,
+                        "step": 1,
+                        "tooltip": "Number of leading rows to drop.",
+                    },
+                ),
             }
         }
 
     RETURN_TYPES = (HUGGINGFACE_DATASET,)
     RETURN_NAMES = ("dataset",)
+    OUTPUT_TOOLTIPS = ("The dataset without its first n rows.",)
     CATEGORY = _CATEGORY
     DESCRIPTION = cleandoc(__doc__ or "")
     FUNCTION = "skip_rows"
@@ -428,13 +454,26 @@ class HFDatasetTake(ComfyNodeABC):
     def INPUT_TYPES(cls) -> dict[str, Any]:
         return {
             "required": {
-                "dataset": (HUGGINGFACE_DATASET, {}),
-                "n": (IO.INT, {"default": 100, "min": 1, "max": INT_MAX, "step": 1}),
+                "dataset": (
+                    HUGGINGFACE_DATASET,
+                    {"tooltip": "Input dataset to keep rows from (from the 🤗 Dataset Loader or another dataset node)."},
+                ),
+                "n": (
+                    IO.INT,
+                    {
+                        "default": 100,
+                        "min": 1,
+                        "max": INT_MAX,
+                        "step": 1,
+                        "tooltip": "Number of leading rows to keep.",
+                    },
+                ),
             }
         }
 
     RETURN_TYPES = (HUGGINGFACE_DATASET,)
     RETURN_NAMES = ("dataset",)
+    OUTPUT_TOOLTIPS = ("The dataset limited to its first n rows.",)
     CATEGORY = _CATEGORY
     DESCRIPTION = cleandoc(__doc__ or "")
     FUNCTION = "take_rows"
@@ -456,14 +495,24 @@ class HFDatasetSort(ComfyNodeABC):
     def INPUT_TYPES(cls) -> dict[str, Any]:
         return {
             "required": {
-                "dataset": (HUGGINGFACE_DATASET, {}),
-                "column": (IO.STRING, {"default": "", "multiline": False}),
-                "reverse": (IO.BOOLEAN, {"default": False}),
+                "dataset": (
+                    HUGGINGFACE_DATASET,
+                    {"tooltip": "Fully-loaded dataset to sort (from the 🤗 Dataset Loader or another dataset node)."},
+                ),
+                "column": (
+                    IO.STRING,
+                    {"default": "", "multiline": False, "tooltip": "Column to sort the rows by."},
+                ),
+                "reverse": (
+                    IO.BOOLEAN,
+                    {"default": False, "tooltip": "Sort in descending order when enabled."},
+                ),
             }
         }
 
     RETURN_TYPES = (HUGGINGFACE_DATASET,)
     RETURN_NAMES = ("dataset",)
+    OUTPUT_TOOLTIPS = ("The sorted dataset.",)
     CATEGORY = _CATEGORY
     DESCRIPTION = cleandoc(__doc__ or "")
     FUNCTION = "sort_rows"
@@ -487,15 +536,40 @@ class HFDatasetShard(ComfyNodeABC):
     def INPUT_TYPES(cls) -> dict[str, Any]:
         return {
             "required": {
-                "dataset": (HUGGINGFACE_DATASET, {}),
-                "num_shards": (IO.INT, {"default": 2, "min": 1, "max": INT_MAX, "step": 1}),
-                "index": (IO.INT, {"default": 0, "min": 0, "max": INT_MAX, "step": 1}),
-                "contiguous": (IO.BOOLEAN, {"default": True}),
+                "dataset": (
+                    HUGGINGFACE_DATASET,
+                    {"tooltip": "Dataset to split into shards (from the 🤗 Dataset Loader or another dataset node)."},
+                ),
+                "num_shards": (
+                    IO.INT,
+                    {
+                        "default": 2,
+                        "min": 1,
+                        "max": INT_MAX,
+                        "step": 1,
+                        "tooltip": "How many roughly equal shards to split the dataset into.",
+                    },
+                ),
+                "index": (
+                    IO.INT,
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": INT_MAX,
+                        "step": 1,
+                        "tooltip": "Which shard to keep (0 .. num_shards-1).",
+                    },
+                ),
+                "contiguous": (
+                    IO.BOOLEAN,
+                    {"default": True, "tooltip": "Keep contiguous row blocks (true) or interleave rows (false)."},
+                ),
             }
         }
 
     RETURN_TYPES = (HUGGINGFACE_DATASET,)
     RETURN_NAMES = ("dataset",)
+    OUTPUT_TOOLTIPS = ("The requested shard of the dataset.",)
     CATEGORY = _CATEGORY
     DESCRIPTION = cleandoc(__doc__ or "")
     FUNCTION = "take_shard"
@@ -527,13 +601,24 @@ class HFDatasetSelect(ComfyNodeABC):
     def INPUT_TYPES(cls) -> dict[str, Any]:
         return {
             "required": {
-                "dataset": (HUGGINGFACE_DATASET, {}),
-                "indices": (IO.STRING, {"default": "0:100", "multiline": False}),
+                "dataset": (
+                    HUGGINGFACE_DATASET,
+                    {"tooltip": "Fully-loaded dataset to select rows from (from the 🤗 Dataset Loader or another dataset node)."},
+                ),
+                "indices": (
+                    IO.STRING,
+                    {
+                        "default": "0:100",
+                        "multiline": False,
+                        "tooltip": "Rows to keep: comma-separated indices (0, 2, 4) and/or Python slices (0:100, 0:100:2); an open slice runs to the last row.",
+                    },
+                ),
             }
         }
 
     RETURN_TYPES = (HUGGINGFACE_DATASET,)
     RETURN_NAMES = ("dataset",)
+    OUTPUT_TOOLTIPS = ("The dataset with only the selected rows.",)
     CATEGORY = _CATEGORY
     DESCRIPTION = cleandoc(__doc__ or "")
     FUNCTION = "select_rows"
@@ -561,13 +646,24 @@ class HFDatasetSelectColumns(ComfyNodeABC):
     def INPUT_TYPES(cls) -> dict[str, Any]:
         return {
             "required": {
-                "dataset": (HUGGINGFACE_DATASET, {}),
-                "columns": (IO.STRING, {"default": "", "multiline": False}),
+                "dataset": (
+                    HUGGINGFACE_DATASET,
+                    {"tooltip": "Dataset to select columns from (from the 🤗 Dataset Loader or another dataset node)."},
+                ),
+                "columns": (
+                    IO.STRING,
+                    {
+                        "default": "",
+                        "multiline": False,
+                        "tooltip": "Comma-separated columns to keep, e.g. text, label.",
+                    },
+                ),
             }
         }
 
     RETURN_TYPES = (HUGGINGFACE_DATASET,)
     RETURN_NAMES = ("dataset",)
+    OUTPUT_TOOLTIPS = ("The dataset restricted to the given columns.",)
     CATEGORY = _CATEGORY
     DESCRIPTION = cleandoc(__doc__ or "")
     FUNCTION = "select_columns"
@@ -590,13 +686,24 @@ class HFDatasetRemoveColumns(ComfyNodeABC):
     def INPUT_TYPES(cls) -> dict[str, Any]:
         return {
             "required": {
-                "dataset": (HUGGINGFACE_DATASET, {}),
-                "columns": (IO.STRING, {"default": "", "multiline": False}),
+                "dataset": (
+                    HUGGINGFACE_DATASET,
+                    {"tooltip": "Dataset to remove columns from (from the 🤗 Dataset Loader or another dataset node)."},
+                ),
+                "columns": (
+                    IO.STRING,
+                    {
+                        "default": "",
+                        "multiline": False,
+                        "tooltip": "Comma-separated columns to remove, e.g. text, label.",
+                    },
+                ),
             }
         }
 
     RETURN_TYPES = (HUGGINGFACE_DATASET,)
     RETURN_NAMES = ("dataset",)
+    OUTPUT_TOOLTIPS = ("The dataset without the removed columns.",)
     CATEGORY = _CATEGORY
     DESCRIPTION = cleandoc(__doc__ or "")
     FUNCTION = "remove_columns"
@@ -622,14 +729,24 @@ class HFDatasetRenameColumn(ComfyNodeABC):
     def INPUT_TYPES(cls) -> dict[str, Any]:
         return {
             "required": {
-                "dataset": (HUGGINGFACE_DATASET, {}),
-                "original_column": (IO.STRING, {"default": "", "multiline": False}),
-                "new_column": (IO.STRING, {"default": "", "multiline": False}),
+                "dataset": (
+                    HUGGINGFACE_DATASET,
+                    {"tooltip": "Dataset whose column to rename (from the 🤗 Dataset Loader or another dataset node)."},
+                ),
+                "original_column": (
+                    IO.STRING,
+                    {"default": "", "multiline": False, "tooltip": "Name of the column to rename."},
+                ),
+                "new_column": (
+                    IO.STRING,
+                    {"default": "", "multiline": False, "tooltip": "New name for the column."},
+                ),
             }
         }
 
     RETURN_TYPES = (HUGGINGFACE_DATASET,)
     RETURN_NAMES = ("dataset",)
+    OUTPUT_TOOLTIPS = ("The dataset with the renamed column.",)
     CATEGORY = _CATEGORY
     DESCRIPTION = cleandoc(__doc__ or "")
     FUNCTION = "rename_column"
@@ -658,12 +775,16 @@ class HFDatasetFlatten(ComfyNodeABC):
     def INPUT_TYPES(cls) -> dict[str, Any]:
         return {
             "required": {
-                "dataset": (HUGGINGFACE_DATASET, {}),
+                "dataset": (
+                    HUGGINGFACE_DATASET,
+                    {"tooltip": "Fully-loaded dataset whose nested columns to flatten (from the 🤗 Dataset Loader)."},
+                ),
             }
         }
 
     RETURN_TYPES = (HUGGINGFACE_DATASET,)
     RETURN_NAMES = ("dataset",)
+    OUTPUT_TOOLTIPS = ("The dataset with nested columns expanded to top level.",)
     CATEGORY = _CATEGORY
     DESCRIPTION = cleandoc(__doc__ or "")
     FUNCTION = "flatten"
@@ -700,15 +821,35 @@ class HFDatasetFilter(ComfyNodeABC):
     def INPUT_TYPES(cls) -> dict[str, Any]:
         return {
             "required": {
-                "dataset": (HUGGINGFACE_DATASET, {}),
-                "column": (IO.STRING, {"default": "", "multiline": False}),
-                "operator": (_FILTER_OPERATORS, {"default": "=="}),
-                "value": (IO.STRING, {"default": "", "multiline": False}),
+                "dataset": (
+                    HUGGINGFACE_DATASET,
+                    {"tooltip": "Dataset to filter rows of (from the 🤗 Dataset Loader or another dataset node)."},
+                ),
+                "column": (
+                    IO.STRING,
+                    {"default": "", "multiline": False, "tooltip": "Column the condition is evaluated on."},
+                ),
+                "operator": (
+                    _FILTER_OPERATORS,
+                    {
+                        "default": "==",
+                        "tooltip": "Comparison: == != < <= > >=, contains / not contains / starts with / ends with, in / not in, is null / is not null.",
+                    },
+                ),
+                "value": (
+                    IO.STRING,
+                    {
+                        "default": "",
+                        "multiline": False,
+                        "tooltip": "Value to compare (comma-separated for 'in' / 'not in'); ignored for the null checks.",
+                    },
+                ),
             }
         }
 
     RETURN_TYPES = (HUGGINGFACE_DATASET,)
     RETURN_NAMES = ("dataset",)
+    OUTPUT_TOOLTIPS = ("The dataset with only the matching rows.",)
     CATEGORY = _CATEGORY
     DESCRIPTION = cleandoc(__doc__ or "")
     FUNCTION = "filter_rows"
@@ -739,15 +880,32 @@ class HFDatasetMapColumn(ComfyNodeABC):
     def INPUT_TYPES(cls) -> dict[str, Any]:
         return {
             "required": {
-                "dataset": (HUGGINGFACE_DATASET, {}),
-                "column": (IO.STRING, {"default": "new_column", "multiline": False}),
-                "operation": (_COLUMN_OPS, {"default": "constant"}),
-                "value": (IO.STRING, {"default": "", "multiline": False}),
+                "dataset": (
+                    HUGGINGFACE_DATASET,
+                    {"tooltip": "Dataset whose column to add or replace (from the 🤗 Dataset Loader or another dataset node)."},
+                ),
+                "column": (
+                    IO.STRING,
+                    {"default": "new_column", "multiline": False, "tooltip": "Name of the column to add or replace."},
+                ),
+                "operation": (
+                    _COLUMN_OPS,
+                    {"default": "constant", "tooltip": "How to compute the value: constant, copy column, or row index."},
+                ),
+                "value": (
+                    IO.STRING,
+                    {
+                        "default": "",
+                        "multiline": False,
+                        "tooltip": "Literal value for 'constant', or the source column name for 'copy column'.",
+                    },
+                ),
             }
         }
 
     RETURN_TYPES = (HUGGINGFACE_DATASET,)
     RETURN_NAMES = ("dataset",)
+    OUTPUT_TOOLTIPS = ("The dataset with the added or replaced column.",)
     CATEGORY = _CATEGORY
     DESCRIPTION = cleandoc(__doc__ or "")
     FUNCTION = "map_column"
@@ -816,15 +974,40 @@ class HFDatasetSplit(ComfyNodeABC):
     def INPUT_TYPES(cls) -> dict[str, Any]:
         return {
             "required": {
-                "dataset": (HUGGINGFACE_DATASET, {}),
-                "test_size": (IO.FLOAT, {"default": 0.2, "min": 0.0, "max": 1.0, "step": 0.05}),
-                "seed": (IO.INT, {"default": 0, "min": 0, "max": INT_MAX, "step": 1}),
-                "shuffle": (IO.BOOLEAN, {"default": True}),
+                "dataset": (
+                    HUGGINGFACE_DATASET,
+                    {"tooltip": "Fully-loaded dataset to split (from the 🤗 Dataset Loader or another dataset node)."},
+                ),
+                "test_size": (
+                    IO.FLOAT,
+                    {
+                        "default": 0.2,
+                        "min": 0.0,
+                        "max": 1.0,
+                        "step": 0.05,
+                        "tooltip": "Fraction of rows held out for the 'test' part (0.0 - 1.0).",
+                    },
+                ),
+                "seed": (
+                    IO.INT,
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": INT_MAX,
+                        "step": 1,
+                        "tooltip": "Random seed for a reproducible split.",
+                    },
+                ),
+                "shuffle": (
+                    IO.BOOLEAN,
+                    {"default": True, "tooltip": "Shuffle the rows before splitting when enabled."},
+                ),
             }
         }
 
     RETURN_TYPES = (HUGGINGFACE_DATASET, HUGGINGFACE_DATASET)
     RETURN_NAMES = ("train", "test")
+    OUTPUT_TOOLTIPS = ("The training part of the split.", "The held-out test part of the split.")
     CATEGORY = _CATEGORY
     DESCRIPTION = cleandoc(__doc__ or "")
     FUNCTION = "train_test_split"
@@ -854,14 +1037,21 @@ class HFDatasetUnique(ComfyNodeABC):
     def INPUT_TYPES(cls) -> dict[str, Any]:
         return {
             "required": {
-                "dataset": (HUGGINGFACE_DATASET, {}),
-                "column": (IO.STRING, {"default": "", "multiline": False}),
+                "dataset": (
+                    HUGGINGFACE_DATASET,
+                    {"tooltip": "Fully-loaded dataset whose distinct values to collect (from the 🤗 Dataset Loader)."},
+                ),
+                "column": (
+                    IO.STRING,
+                    {"default": "", "multiline": False, "tooltip": "Column whose unique values to return."},
+                ),
             }
         }
 
     RETURN_TYPES = (IO.ANY,)
     RETURN_NAMES = ("values",)
     OUTPUT_IS_LIST = (True,)
+    OUTPUT_TOOLTIPS = ("Data List of the distinct values found in the column.",)
     CATEGORY = _CATEGORY
     DESCRIPTION = cleandoc(__doc__ or "")
     FUNCTION = "unique_values"
@@ -888,14 +1078,34 @@ class HFDatasetToList(ComfyNodeABC):
     def INPUT_TYPES(cls) -> dict[str, Any]:
         return {
             "required": {
-                "dataset": (HUGGINGFACE_DATASET, {}),
-                "column": (IO.STRING, {"default": "", "multiline": False}),
-                "limit": (IO.INT, {"default": -1, "min": -1, "max": INT_MAX, "step": 1}),
+                "dataset": (
+                    HUGGINGFACE_DATASET,
+                    {"tooltip": "Dataset to materialize (from the 🤗 Dataset Loader or another dataset node)."},
+                ),
+                "column": (
+                    IO.STRING,
+                    {
+                        "default": "",
+                        "multiline": False,
+                        "tooltip": "When set, each list item is that column's value instead of a whole row dict.",
+                    },
+                ),
+                "limit": (
+                    IO.INT,
+                    {
+                        "default": -1,
+                        "min": -1,
+                        "max": INT_MAX,
+                        "step": 1,
+                        "tooltip": "Max rows to materialize; -1 = all.",
+                    },
+                ),
             }
         }
 
     RETURN_TYPES = ("LIST",)
     RETURN_NAMES = ("list",)
+    OUTPUT_TOOLTIPS = ("One Python list of all rows (or of a column's values), as a Basic-data-handling LIST.",)
     CATEGORY = _CATEGORY
     DESCRIPTION = cleandoc(__doc__ or "")
     FUNCTION = "to_list"
@@ -920,15 +1130,35 @@ class HFDatasetToDataList(ComfyNodeABC):
     def INPUT_TYPES(cls) -> dict[str, Any]:
         return {
             "required": {
-                "dataset": (HUGGINGFACE_DATASET, {}),
-                "column": (IO.STRING, {"default": "", "multiline": False}),
-                "limit": (IO.INT, {"default": -1, "min": -1, "max": INT_MAX, "step": 1}),
+                "dataset": (
+                    HUGGINGFACE_DATASET,
+                    {"tooltip": "Dataset to materialize (from the 🤗 Dataset Loader or another dataset node)."},
+                ),
+                "column": (
+                    IO.STRING,
+                    {
+                        "default": "",
+                        "multiline": False,
+                        "tooltip": "When set, each item is that column's value instead of a whole row dict.",
+                    },
+                ),
+                "limit": (
+                    IO.INT,
+                    {
+                        "default": -1,
+                        "min": -1,
+                        "max": INT_MAX,
+                        "step": 1,
+                        "tooltip": "Max rows to materialize; -1 = all.",
+                    },
+                ),
             }
         }
 
     RETURN_TYPES = (IO.ANY,)
     RETURN_NAMES = ("rows",)
     OUTPUT_IS_LIST = (True,)
+    OUTPUT_TOOLTIPS = ("Data List of row dicts (or of a column's values), one item per row.",)
     CATEGORY = _CATEGORY
     DESCRIPTION = cleandoc(__doc__ or "")
     FUNCTION = "to_data_list"
@@ -958,20 +1188,20 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "HFDatasetShuffle": "Hugging Face Dataset Shuffle",
-    "HFDatasetSkip": "Hugging Face Dataset Skip",
-    "HFDatasetTake": "Hugging Face Dataset Take",
-    "HFDatasetSort": "Hugging Face Dataset Sort",
-    "HFDatasetShard": "Hugging Face Dataset Shard",
-    "HFDatasetSelect": "Hugging Face Dataset Select Rows",
-    "HFDatasetSelectColumns": "Hugging Face Dataset Select Columns",
-    "HFDatasetRemoveColumns": "Hugging Face Dataset Remove Columns",
-    "HFDatasetRenameColumn": "Hugging Face Dataset Rename Column",
-    "HFDatasetFlatten": "Hugging Face Dataset Flatten",
-    "HFDatasetFilter": "Hugging Face Dataset Filter",
-    "HFDatasetMapColumn": "Hugging Face Dataset Map Column",
-    "HFDatasetSplit": "Hugging Face Dataset Train/Test Split",
-    "HFDatasetUnique": "Hugging Face Dataset Unique",
-    "HFDatasetToList": "Hugging Face Dataset To LIST",
-    "HFDatasetToDataList": "Hugging Face Dataset To Data List",
+    "HFDatasetShuffle": "🤗 Dataset Shuffle",
+    "HFDatasetSkip": "🤗 Dataset Skip",
+    "HFDatasetTake": "🤗 Dataset Take",
+    "HFDatasetSort": "🤗 Dataset Sort",
+    "HFDatasetShard": "🤗 Dataset Shard",
+    "HFDatasetSelect": "🤗 Dataset Select Rows",
+    "HFDatasetSelectColumns": "🤗 Dataset Select Columns",
+    "HFDatasetRemoveColumns": "🤗 Dataset Remove Columns",
+    "HFDatasetRenameColumn": "🤗 Dataset Rename Column",
+    "HFDatasetFlatten": "🤗 Dataset Flatten",
+    "HFDatasetFilter": "🤗 Dataset Filter",
+    "HFDatasetMapColumn": "🤗 Dataset Map Column",
+    "HFDatasetSplit": "🤗 Dataset Train/Test Split",
+    "HFDatasetUnique": "🤗 Dataset Unique",
+    "HFDatasetToList": "🤗 Dataset To LIST",
+    "HFDatasetToDataList": "🤗 Dataset To Data List",
 }

@@ -17,11 +17,13 @@ authors = [
 ]
 readme = "README.md"
 license = { file = "LICENSE" }
+requires-python = ">=3.10"
 classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "datasets",  # loaded lazily at runtime so ComfyUI starts even if it is missing
+    "datasets",  # loaded lazily at runtime so ComfyUI still starts even if it is missing
+    # Kept in sync with requirements.txt (used by ComfyUI-Manager / git installs).
 ]
 
 [project.optional-dependencies]
@@ -35,6 +37,7 @@ dev = [
 
 [project.urls]
 "Bug Tracker" = "https://github.com/StableLlama/ComfyUI-huggingface_dataset/issues"
+Documentation = "https://github.com/StableLlama/ComfyUI-huggingface_dataset#readme"
 homepage = "https://github.com/StableLlama/ComfyUI-huggingface_dataset"
 Repository = "https://github.com/StableLlama/ComfyUI-huggingface_dataset"
 
