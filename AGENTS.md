@@ -1,0 +1,70 @@
+# AGENTS.md
+
+Guidance for AI coding assistants working in this repository.
+
+## Project overview
+
+`huggingface_dataset` is a **ComfyUI custom-node pack**: a node that loads a
+Hugging Face dataset (Hub or local/remote files) via the `datasets` library and
+makes it available inside ComfyUI as an opaque `HUGGINGFACE_DATASET` output plus
+a ComfyUI *Data List* of row dicts for further processing.
+
+## Repository layout
+
+- `src/huggingface_dataset/` — node implementation (`dataset_nodes.py` registers
+the node; `__init__.py` merges the mappings). Plain `src` layout: `src/` and
+`tests/` have **no** `__init__.py`.
+- `__init__.py` (repo root) — ComfyUI entry point (ComfyUI imports the folder's
+`__init__.py`); it adds `src/` to `sys.path` and imports the mappings from there
+(the importable package lives under `src/`, and when the repo is cloned as its
+GitHub name "ComfyUI-huggingface_dataset" the folder is not a valid Python
+package name).
+- `tests/` — pytest suite (no network / no `datasets` install needed; the lazy
+  `_require_datasets()` helper is monkeypatched).
+- `web/` — frontend assets (icon).
+- `pyproject.toml` — package metadata, Comfy registry config (`[tool.comfy]`),
+  and tool config (ruff / mypy / pytest).
+- `CHANGELOG.md` — release notes in Keep-a-Changelog format; the publish
+  workflow reads the section matching the current version.
+- `.github/workflows/` — CI (`build-pipeline.yml`, `validate.yml`) and registry
+  publishing (`publish_node.yml`), copied from the `basic_data_handling` pack.
+
+## Key design points (IMPORTANT)
+
+- **Lazy dependency:** `datasets` is declared in `[project] dependencies` but is
+  imported at call time via `_require_datasets()` so ComfyUI still starts when it
+  is missing; a clear "pip install datasets" error is raised on use. Do **not**
+  import `datasets` at module import time.
+- **Row conversion:** rows are fetched as one batched slice and re-joined into
+  per-row dicts. `_to_python()` converts numpy scalars/arrays via duck-typing
+  (no hard numpy import) and leaves exotic objects (images, audio) unchanged.
+- **Data List output:** the `rows` output uses `OUTPUT_IS_LIST = (False, True)`
+  so it behaves like the "Data List" producers of the Basic data handling pack.
+- ComfyUI imports are guarded with a fallback `IO`/`ComfyNodeABC` so tests run
+  without ComfyUI.
+
+## Versioning & releases
+
+- **Single source of truth:** `[project] version` in `pyproject.toml`.
+- To release: bump the version, add a `## [X.Y.Z] - YYYY-MM-DD` section to
+  `CHANGELOG.md` (Keep-a-Changelog), then push to `main`. The publish workflow
+  auto-triggers on pushes touching `pyproject.toml` and publishes to the Comfy
+  registry; the matching changelog section becomes the release note.
+
+## Tooling
+
+Python venv (repo lives under `ComfyUI/custom_nodes`): `<repo>/../../venv/bin/python`
+
+- Lint: `python -m ruff check .`
+- Format: `python -m ruff format .`
+- Type check: `python -m mypy src tests` (strict; not `mypy .` — the importable
+  package lives under `src`, and when cloned as the GitHub name the repo folder
+  "ComfyUI-huggingface_dataset" is not a valid Python package name)
+- Tests: `python -m pytest tests/`
+- Pre-commit: `python -m pre_commit run --all-files`
+
+## Workflow / commit policy
+
+- The human reviews and commits all changes (commits are GPG-signed). Do **not**
+  run `git commit` yourself; make the changes, optionally stage them, and hand
+  off to the user.

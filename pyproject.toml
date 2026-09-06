@@ -1,0 +1,110 @@
+[build-system]
+requires = ["setuptools>=70.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "huggingface_dataset"
+version = "0.1.0"
+description = """A custom ComfyUI node to load Hugging Face datasets and make them available for further processing.
+
+The node loads a dataset from the Hugging Face Hub or from local/remote files
+(csv, json, parquet, arrow, text) via the Hugging Face `datasets` library and
+exposes it as an opaque HUGGINGFACE_DATASET object plus a ComfyUI Data List of
+row dicts, ready to be processed further by generic data-handling node packs
+such as "Basic data handling"."""
+authors = [
+  {name = "StableLlama"}
+]
+readme = "README.md"
+license = { file = "LICENSE" }
+classifiers = [
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "datasets",  # loaded lazily at runtime so ComfyUI starts even if it is missing
+]
+
+[project.optional-dependencies]
+dev = [
+    "coverage",  # testing
+    "mypy",  # linting
+    "pre-commit", # runs linting on commit
+    "pytest",  # testing
+    "ruff",  # linting
+]
+
+[project.urls]
+"Bug Tracker" = "https://github.com/StableLlama/ComfyUI-huggingface_dataset/issues"
+homepage = "https://github.com/StableLlama/ComfyUI-huggingface_dataset"
+Repository = "https://github.com/StableLlama/ComfyUI-huggingface_dataset"
+
+[tool.comfy]
+PublisherId = "stablellama"
+DisplayName = "Hugging Face dataset"
+Icon = "https://raw.githubusercontent.com/StableLlama/ComfyUI-huggingface_dataset/refs/heads/main/web/img/huggingface_dataset_icon.png"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["huggingface_dataset*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.*"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+pythonpath = [
+    "src",
+]
+testpaths = [
+    "tests",
+]
+python_files = ["test_*.py"]
+
+[tool.mypy]
+# Run as `python -m mypy src tests`. The importable package lives under `src`,
+# and when the repo is cloned as its GitHub name ("ComfyUI-huggingface_dataset")
+# the folder is not a valid Python package name either, so mypy cannot be
+# pointed at ".". `explicit_package_bases` + `mypy_path` map the src-layout
+# modules correctly.
+files = ["src", "tests"]
+mypy_path = "src"
+explicit_package_bases = true
+
+# Use strict defaults
+strict = true
+warn_unreachable = true
+warn_no_return = true
+
+[[tool.mypy.overrides]]
+# `comfy` is only present when running inside a ComfyUI install; the nodes guard
+# the import and fall back to plain types, so don't fail when it is missing.
+module = ["comfy", "comfy.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# `datasets` is a declared dependency but is imported lazily (and may be absent
+# at type-check time); keep the strict check standalone-friendly.
+module = ["datasets", "datasets.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Don't require test functions to include types
+module = "tests.*"
+allow_untyped_defs = true
+disable_error_code = "attr-defined"
+
+[tool.ruff]
+line-length = 140
+src = ["src", "tests"]
+target-version = "py39"
+
+[tool.ruff.lint]
+select = [
+    "S102",  # exec-builtin
+    "S307",  # eval-used
+    "W293",
+    "F",  # Pyflakes: syntax errors and undefined names
+]
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "double"
