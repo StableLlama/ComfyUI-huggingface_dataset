@@ -9,14 +9,18 @@ still imports cleanly outside ComfyUI (tests, tooling).
 from typing import Any
 
 from . import dataset_nodes
+from . import dataset_ops_nodes
+from .dataset_nodes import ComfyNodeABC
 from .dataset_nodes import JPEG_XL_AVAILABLE
 from .dataset_nodes import split_info
 
-NODE_CLASS_MAPPINGS = {}
+NODE_CLASS_MAPPINGS: dict[str, type[ComfyNodeABC]] = {}
 NODE_CLASS_MAPPINGS.update(dataset_nodes.NODE_CLASS_MAPPINGS)
+NODE_CLASS_MAPPINGS.update(dataset_ops_nodes.NODE_CLASS_MAPPINGS)
 
-NODE_DISPLAY_NAME_MAPPINGS = {}
+NODE_DISPLAY_NAME_MAPPINGS: dict[str, str] = {}
 NODE_DISPLAY_NAME_MAPPINGS.update(dataset_nodes.NODE_DISPLAY_NAME_MAPPINGS)
+NODE_DISPLAY_NAME_MAPPINGS.update(dataset_ops_nodes.NODE_DISPLAY_NAME_MAPPINGS)
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "JPEG_XL_AVAILABLE"]
 

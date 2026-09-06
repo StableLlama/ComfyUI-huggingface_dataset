@@ -16,6 +16,12 @@ in two forms:
   from the **Basic data handling** node pack (convert to a ComfyUI `LIST` or
   `Data List`, access fields, filter, ...).
 
+The pack also ships a set of **processing nodes** that consume the `dataset`
+output and expose the data-wrangling methods of the `datasets` library
+(shuffling, filtering, column selection, ...) as graph nodes, so a dataset can
+be shaped *before* its rows are materialized — see
+[Dataset nodes](#dataset-nodes).
+
 ## Requirements
 
 - [ComfyUI](https://docs.comfy.org/get_started)
@@ -145,6 +151,66 @@ flowchart LR
 > [!TIP]
 > `rows` is already a ComfyUI *Data List* — it can be connected straight into the
 > **Data List** and **LIST** nodes of the **Basic data handling** pack.
+
+## Dataset nodes
+
+The loader's `dataset` output is an opaque `HUGGINGFACE_DATASET` value. The
+processing nodes below take it as input, work on the underlying `datasets`
+object and hand the result back as a new `HUGGINGFACE_DATASET`, so transforms
+chain together (e.g. *Shuffle → Filter → Map Column → Select Columns*). Nodes
+that only exist on a fully-loaded `datasets.Dataset` — marked **loaded only**
+below — raise a clear error when given a streaming dataset instead of a cryptic
+traceback: disable `streaming` on the loader for those.
+
+### Transform nodes
+
+| Node | What it does | Streaming? |
+| --- | --- | --- |
+| **Hugging Face Dataset Shuffle** | Randomly reorders the rows (`shuffle(seed)`). | ✅ |
+| **Hugging Face Dataset Skip** | Drops the first `n` rows (`skip(n)`). | ✅ |
+| **Hugging Face Dataset Take** | Keeps only the first `n` rows (`take(n)`). | ✅ |
+| **Hugging Face Dataset Sort** | Sorts the rows by a `column` (`sort`). | loaded only |
+| **Hugging Face Dataset Shard** | Keeps shard `index` of the dataset split into `num_shards` (`shard`). | ✅ |
+| **Hugging Face Dataset Select Rows** | Keeps rows by `indices` — comma-separated `0,2,4` and/or slices `0:100`, `0:100:2` (`select`). | loaded only |
+| **Hugging Face Dataset Select Columns** | Keeps only the comma-separated `columns` (`select_columns`). | ✅ |
+| **Hugging Face Dataset Remove Columns** | Removes the comma-separated `columns` (`remove_columns`). | ✅ |
+| **Hugging Face Dataset Rename Column** | Renames one column (`rename_column`). | ✅ |
+| **Hugging Face Dataset Flatten** | Expands nested columns into top-level ones (`flatten`). | loaded only |
+| **Hugging Face Dataset Filter** | Keeps rows whose `column` satisfies an `operator` against `value` (`filter`). | ✅ |
+| **Hugging Face Dataset Map Column** | Adds/replaces `column` per row from a `constant`, a copy of another column, or the `row index` (`map`). | ✅ |
+| **Hugging Face Dataset Train/Test Split** | Randomly splits into `train` and `test` outputs (`train_test_split`). | loaded only |
+| **Hugging Face Dataset Unique** | Returns the unique `column` values as a *Data List* (`unique`). | loaded only |
+
+**Filter operators:** `==`, `!=`, `<`, `<=`, `>`, `>=` (the `value` text is
+coerced to the column's type, so numeric columns compare with plain numbers),
+`contains` / `not contains` / `starts with` / `ends with`, `in` / `not in`
+(comma-separated `value` list), and `is null` / `is not null`.
+
+### Conversion nodes (LIST and Data List)
+
+The "Basic data handling" pack distinguishes two list shapes, and either kind of
+dataset (fully-loaded **or** streaming) can be turned into both:
+
+| Node | Output | Description |
+| --- | --- | --- |
+| **Hugging Face Dataset To LIST** | `LIST` | One Python list value of all rows (a *LIST* as Basic data handling defines it, so it feeds `List length`, `List get item`, ...). With a `column` set, the list holds that column's values instead of row dicts. |
+| **Hugging Face Dataset To Data List** | `*` (Data List) | The same rows exposed as a ComfyUI *Data List* (like the loader's `rows` output): Basic *Data List* nodes receive the whole list in one call, other nodes run once per row. |
+
+Both honour a `limit` widget (`-1` = all rows) — handy for pulling only the
+first rows of a large streaming dataset.
+
+### Example workflow
+
+Load IMDb, keep only positive reviews (`label` `==` `1`), add a row index and
+feed the result to a Basic-data-handling *Data List*:
+
+```mermaid
+flowchart LR
+    A[Load Hugging Face Dataset<br/>path=stanfordnlp/imdb<br/>split=train] -->|dataset| B[Hugging Face Dataset Filter<br/>column=label operator== value=1]
+    B -->|dataset| C[Hugging Face Dataset Map Column<br/>column=row_id operation=row index]
+    C -->|dataset| D[Hugging Face Dataset To Data List]
+    D -->|rows| E[Basic: Data List length]
+```
 
 ## Development
 

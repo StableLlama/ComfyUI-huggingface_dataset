@@ -33,9 +33,9 @@ from huggingface_dataset import NODE_DISPLAY_NAME_MAPPINGS  # noqa: E402
 # optional `pillow-jxl-plugin` would add JPEG XL image support.
 _LOGGER = logging.getLogger("huggingface_dataset")
 _LOGGER.info(
-    "Hugging Face dataset custom nodes loaded (%d node) - JPEG XL image support: %s",
+    "🤗 Hugging Face dataset custom nodes loaded (%d node) - JPEG XL image support: %s",
     len(NODE_CLASS_MAPPINGS),
-    "enabled" if JPEG_XL_AVAILABLE else "disabled",
+    "enabled ✅" if JPEG_XL_AVAILABLE else "disabled ❌",
 )
 
 WEB_DIRECTORY = "./web"

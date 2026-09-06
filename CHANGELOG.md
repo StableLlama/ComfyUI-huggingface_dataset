@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A family of transform nodes that consume the opaque `HUGGINGFACE_DATASET`
+  value (the loader's `dataset` output) and expose the data-wrangling methods of
+  the `datasets` library as ComfyUI nodes, so a dataset can be shaped *before*
+  its rows are turned into a Data List. The new nodes are `HFDatasetShuffle`,
+  `HFDatasetSkip`, `HFDatasetTake`, `HFDatasetSort`, `HFDatasetShard`,
+  `HFDatasetSelect` (rows by index), `HFDatasetSelectColumns`,
+  `HFDatasetRemoveColumns`, `HFDatasetRenameColumn`, `HFDatasetFlatten`,
+  `HFDatasetFilter`, `HFDatasetMapColumn`, `HFDatasetSplit` (train/test) and
+  `HFDatasetUnique`. Where the underlying method exists on both kinds of object
+  they work on a fully-loaded `datasets.Dataset` *and* on a lazy streaming
+  `datasets.IterableDataset`; operations that only exist on a materialized
+  dataset (`sort`, `select`, `flatten`, `train_test_split`, `unique`) raise a
+  friendly error when given a streaming one instead of an opaque traceback.
+- Declarative per-row logic without free-form Python: `HFDatasetFilter` keeps
+  rows by column + operator + value (`==`, `!=`, `<`, `<=`, `>`, `>=` with
+  numeric coercion, `contains`/`not contains`/`starts with`/`ends with`,
+  `in`/`not in`, `is null`/`is not null`), and `HFDatasetMapColumn` adds or
+  replaces a column per row from a constant, a copy of another column, or the
+  row index.
+- Conversion nodes that turn any `HUGGINGFACE_DATASET` (fully-loaded *or*
+  streaming) into plain data for the "Basic data handling" pack:
+  `HFDatasetToList` materializes it as a single *LIST* value and
+  `HFDatasetToDataList` as a ComfyUI *Data List* of rows. Both expose just one
+  column's values when a `column` is given and honour a row `limit`.
 - Datasets whose images are JPEG XL (`.jxl`) can now be decoded: the pack
   opportunistically imports `pillow_jxl` (the Pillow JPEG XL plugin from
   `pip install pillow-jxl-plugin`) so it registers its decoder with Pillow when
