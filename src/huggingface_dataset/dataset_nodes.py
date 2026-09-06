@@ -15,6 +15,9 @@ library (``datasets.load_dataset``), which is imported lazily so that ComfyUI
 keeps starting even when the dependency is not installed yet.
 """
 
+import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from inspect import cleandoc
 from os import path as os_path
 from typing import Any
@@ -72,6 +75,49 @@ _EXTENSION_TO_BUILDER = {
     ".txt": "text",
 }
 
+#: Split used when the user does not pick one. It is a member of
+#: ``_FALLBACK_SPLITS`` so ComfyUI can offer it before the dataset is known.
+_DEFAULT_SPLIT = "train"
+
+#: Options offered by the ``split`` dropdown until the dataset's real splits are
+#: known (the frontend replaces them with the actual split names once a source
+#: is chosen). Keep this in sync with the JS fallback list in ``web/js``.
+_FALLBACK_SPLITS = ("train", "test", "validation")
+
+#: Order in which a "sensible" split is picked when the requested one is absent
+#: (e.g. a dataset that only has a ``test`` split but no ``train``).
+_PREFERRED_SPLITS = ("train", "validation", "test")
+
+#: Loggers of the Hugging Face stack that spam the console with per-request INFO
+#: lines ("HTTP Request: ..." via ``httpx``) while a dataset is looked up/loaded.
+_HF_LOGGER_NAMES = ("httpx", "huggingface_hub", "datasets", "filelock", "httpcore", "urllib3")
+
+
+@contextmanager
+def _quiet_http_logs() -> Iterator[None]:
+    """Temporarily quieten the noisy HTTP/datasets loggers during our own calls.
+
+    The ``datasets``/``huggingface_hub`` stack logs every HTTP round-trip at
+    INFO level (through ``httpx``), which clutters the ComfyUI console while the
+    node discovers a dataset's splits or loads data. Only the loggers listed in
+    :data:`_HF_LOGGER_NAMES` (and their sub-loggers) are raised to WARNING, and
+    only for the duration of the wrapped library call; their previous level is
+    restored afterwards.
+    """
+    names = list(_HF_LOGGER_NAMES)
+    names.extend(name for name in logging.Logger.manager.loggerDict if name.startswith(_HF_LOGGER_NAMES) and name not in names)
+    affected: list[tuple[logging.Logger, int]] = []
+    for name in names:
+        logger = logging.getLogger(name)
+        if logger.level == logging.NOTSET or logger.level < logging.WARNING:
+            affected.append((logger, logger.level))
+            logger.setLevel(logging.WARNING)
+    try:
+        yield
+    finally:
+        for logger, level in affected:
+            logger.setLevel(level)
+
 
 def _require_datasets() -> Any:
     """Import and return the ``datasets`` module (lazy import).
@@ -98,6 +144,159 @@ def _infer_file_builder(path: str) -> str | None:
     base = path.split("?", 1)[0].split("#", 1)[0]  # strip URL query / fragment
     extension = os_path.splitext(base)[1].lower()
     return _EXTENSION_TO_BUILDER.get(extension)
+
+
+def _split_name(split: str) -> str:
+    """Return the plain split name of ``split``, dropping any slicing suffix.
+
+    ``datasets`` slicing syntax (``"train[:100]"``, ``"train[:10%]"``) encodes
+    the split to use in the part before the ``[``; that part is what has to be
+    present in the dataset's split list.
+    """
+    return split.split("[", 1)[0].strip()
+
+
+def _sensible_split(available: list[str]) -> str:
+    """Pick the friendliest default among ``available`` split names."""
+    for name in _PREFERRED_SPLITS:
+        if name in available:
+            return name
+    return available[0] if available else _DEFAULT_SPLIT
+
+
+def _available_splits(
+    path: str,
+    loader: str = "auto",
+    config: str = "",
+    revision: str = "",
+    trust_remote_code: bool = False,
+) -> list[str] | None:
+    """Return the split names a dataset exposes, or ``None`` when they cannot be determined.
+
+    * Empty ``path`` yields an empty list (nothing to look up yet).
+    * A single file/glob/URL (``csv``/``json``/``parquet``/``arrow``/``text``)
+      always maps to exactly one split (``train``), matching
+      :func:`datasets.load_dataset` when a single string is given as
+      ``data_files``.
+    * Hub ids and local dataset directories are looked up through
+      ``datasets.get_dataset_split_names``.
+
+    Returns ``None`` when the splits cannot be determined (network errors, a
+    multi-config Hub dataset without a ``config``, a loader script that needs
+    ``trust_remote_code``, ...) so callers can fall back to ``datasets`` itself.
+    Raises :class:`ImportError` when the ``datasets`` package is missing so
+    callers can surface the actionable install message.
+    """
+    clean_path = (path or "").strip()
+    if not clean_path:
+        return []
+
+    datasets = _require_datasets()  # ImportError propagates to the caller
+
+    active_loader = loader
+    if active_loader == "auto":
+        active_loader = _infer_file_builder(clean_path) or "hub"
+
+    if active_loader in _FILE_BUILDERS:
+        # A single file / glob is always loaded as one "train" split.
+        return [_DEFAULT_SPLIT]
+
+    try:
+        kwargs: dict[str, Any] = {}
+        if (config or "").strip():
+            kwargs["config_name"] = config.strip()
+        if (revision or "").strip():
+            kwargs["revision"] = revision.strip()
+        with _quiet_http_logs():
+            raw_names = datasets.get_dataset_split_names(clean_path, **kwargs)
+        return [str(name) for name in raw_names]
+    except Exception:
+        return None
+
+
+def _resolve_split(
+    path: str,
+    split: str,
+    loader: str = "auto",
+    config: str = "",
+    revision: str = "",
+    trust_remote_code: bool = False,
+) -> str:
+    """Resolve the split to actually load, giving clean feedback on bad splits.
+
+    The dropdown normally prevents invalid splits, but this still guards cases
+    where the requested value comes from an older workflow or an upstream value:
+
+    * when the split (or the split part of a slicing expression like
+      ``"train[:100]"``) exists in the dataset it is passed through unchanged;
+    * when the *default* split (``"train"``) does not exist - e.g. a dataset
+      that only ships a ``test`` split - a sensible alternative is picked;
+    * any other unknown split raises a clear :class:`ValueError` listing the
+      available splits instead of an opaque ``datasets`` traceback;
+    * when the available splits cannot be determined (offline, missing
+      ``datasets``, ...) the request is passed through untouched so
+      :func:`datasets.load_dataset` keeps its usual behaviour.
+    """
+    requested = (split or "").strip() or _DEFAULT_SPLIT
+    try:
+        available = _available_splits(
+            path=path,
+            loader=loader,
+            config=config,
+            revision=revision,
+            trust_remote_code=trust_remote_code,
+        )
+    except ImportError:
+        return requested  # "pip install datasets" surfaces later, from _load_dataset()
+
+    if not available:
+        return requested  # unknown -> let datasets load / report
+
+    if _split_name(requested) in available:
+        return requested
+    if requested == _DEFAULT_SPLIT:
+        return _sensible_split(available)
+    listed = ", ".join(available)
+    raise ValueError(f"Unknown split {requested!r}: this dataset has no {_split_name(requested)!r} split. Available splits: {listed}.")
+
+
+def split_info(
+    path: str,
+    loader: str = "auto",
+    config: str = "",
+    revision: str = "",
+    trust_remote_code: bool = False,
+) -> dict[str, Any]:
+    """Return the dataset's splits for the frontend dropdown (HTTP-friendly).
+
+    Returns ``{"splits": [...], "default": str, "error": None}`` on success and
+    ``{"splits": None, "default": None, "error": str}`` when the splits cannot be
+    determined (e.g. ``datasets`` is not installed).
+    """
+    try:
+        available = _available_splits(
+            path=path,
+            loader=loader,
+            config=config,
+            revision=revision,
+            trust_remote_code=trust_remote_code,
+        )
+    except ImportError as exc:  # datasets missing -> actionable message
+        return {"splits": None, "default": None, "error": str(exc)}
+
+    if available is None:
+        return {
+            "splits": None,
+            "default": None,
+            "error": "Could not determine the splits of this dataset (network, missing config, or loading-code issues).",
+        }
+    if not available:
+        return {
+            "splits": None,
+            "default": None,
+            "error": "No splits were found for this dataset source.",
+        }
+    return {"splits": available, "default": _sensible_split(available), "error": None}
 
 
 def _to_python(value: Any) -> Any:
@@ -141,9 +340,9 @@ def _load_dataset(
 ) -> Any:
     """Load a single-split dataset with :func:`datasets.load_dataset`.
 
-    ``path`` is either a Hub repository id (e.g. ``"rotten_tomatoes"`` or
-    ``"lhoestq/demo1"``), a local dataset directory, or a local/remote/glob
-    file path (``csv``/``json``/``jsonl``/``parquet``/``arrow``/``txt``).
+    ``path`` is either a Hub repository id (e.g. ``"stanfordnlp/imdb"``), a local
+    dataset directory, or a local/remote/glob file path
+    (``csv``/``json``/``jsonl``/``parquet``/``arrow``/``txt``).
     """
     datasets = _require_datasets()
 
@@ -159,15 +358,16 @@ def _load_dataset(
     if active_loader == "auto":
         active_loader = _infer_file_builder(path) or "hub"
 
-    if active_loader in _FILE_BUILDERS:
-        # Local / remote / glob data files read through the matching file builder.
-        return datasets.load_dataset(active_loader, data_files=path, **kwargs)
+    with _quiet_http_logs():
+        if active_loader in _FILE_BUILDERS:
+            # Local / remote / glob data files read through the matching file builder.
+            return datasets.load_dataset(active_loader, data_files=path, **kwargs)
 
-    # "hub" loader: Hub repository id (optionally with config subset) or a local
-    # dataset directory.
-    if config.strip():
-        return datasets.load_dataset(path, config.strip(), **kwargs)
-    return datasets.load_dataset(path, **kwargs)
+        # "hub" loader: Hub repository id (optionally with config subset) or a
+        # local dataset directory.
+        if config.strip():
+            return datasets.load_dataset(path, config.strip(), **kwargs)
+        return datasets.load_dataset(path, **kwargs)
 
 
 def _materialize_rows(dataset: Any, limit: int = -1) -> list[dict[str, Any]]:
@@ -191,8 +391,9 @@ class LoadHuggingFaceDataset(ComfyNodeABC):
     Loading is done through the ``datasets`` library (``datasets.load_dataset``).
 
     Sources:
-      - **Hugging Face Hub** repository id, e.g. ``rotten_tomatoes``,
-        ``glue`` (with config ``mrpc``), ``lhoestq/custom_squad`` (with revision).
+      - **Hugging Face Hub** repository id (`namespace/name`), e.g.
+        ``stanfordnlp/imdb``, ``nyu-mll/glue`` (with config ``mrpc``), or
+        ``HuggingFaceFW/fineweb`` (with revision).
       - **Local / remote files**: ``csv``, ``tsv``, ``json``, ``jsonl``,
         ``parquet``, ``arrow`` and ``txt``. With ``loader`` set to ``auto`` the
         format is inferred from the file extension; otherwise pick the matching
@@ -211,7 +412,9 @@ class LoadHuggingFaceDataset(ComfyNodeABC):
             "required": {
                 "path": (IO.STRING, {"default": "", "multiline": False}),
                 "loader": (_LOADER_CHOICES, {"default": "auto"}),
-                "split": (IO.STRING, {"default": "train", "multiline": False}),
+                # A dropdown; the frontend swaps the fallback options for the
+                # dataset's real split names once `path`/`config`/... are known.
+                "split": (_FALLBACK_SPLITS, {"default": _DEFAULT_SPLIT}),
                 "config": (IO.STRING, {"default": "", "multiline": False}),
                 "revision": (IO.STRING, {"default": "", "multiline": False}),
                 "trust_remote_code": (IO.BOOLEAN, {"default": False}),
@@ -237,10 +440,19 @@ class LoadHuggingFaceDataset(ComfyNodeABC):
         limit: int = -1,
     ) -> tuple[Any, list[dict[str, Any]]]:
         """Load the dataset and return ``(dataset, rows)``."""
+        requested_split = (split or "").strip() or _DEFAULT_SPLIT
+        active_split = _resolve_split(
+            path=path,
+            split=requested_split,
+            loader=loader,
+            config=config,
+            revision=revision,
+            trust_remote_code=trust_remote_code,
+        )
         dataset = _load_dataset(
             path=path,
             loader=loader,
-            split=split,
+            split=active_split,
             config=config,
             revision=revision,
             trust_remote_code=trust_remote_code,

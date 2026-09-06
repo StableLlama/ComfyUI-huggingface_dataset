@@ -21,7 +21,8 @@ GitHub name "ComfyUI-huggingface_dataset" the folder is not a valid Python
 package name).
 - `tests/` — pytest suite (no network / no `datasets` install needed; the lazy
   `_require_datasets()` helper is monkeypatched).
-- `web/` — frontend assets (icon).
+- `web/` — frontend assets: icon (`img/`) and the split-dropdown extension
+  (`js/hf_dataset_splits.js`, auto-loaded by ComfyUI from the `WEB_DIRECTORY`).
 - `pyproject.toml` — package metadata, Comfy registry config (`[tool.comfy]`),
   and tool config (ruff / mypy / pytest).
 - `CHANGELOG.md` — release notes in Keep-a-Changelog format; the publish
@@ -40,6 +41,21 @@ package name).
   (no hard numpy import) and leaves exotic objects (images, audio) unchanged.
 - **Data List output:** the `rows` output uses `OUTPUT_IS_LIST = (False, True)`
   so it behaves like the "Data List" producers of the Basic data handling pack.
+- **Split dropdown:** `split` is a COMBO (fallback options `train`/`test`/
+  `validation`) whose real options come from the dataset. Split discovery uses
+  `datasets.get_dataset_split_names` (see `_available_splits`); it returns
+  `None` on any failure (offline, multi-config without `config`, loader scripts)
+  and the loader then passes the requested value through unchanged. The
+  `/hfds/splits` HTTP endpoint (registered in `src/huggingface_dataset/__init__`
+  via ComfyUI's `PromptServer.routes`) serves splits + a sensible default; the
+  frontend extension `web/js/hf_dataset_splits.js` refreshes the widget on
+  `path`/`config`/`revision`/`loader`/`trust_remote_code` changes, on workflow
+  load and via its "Refresh splits" button.
+- **Friendly errors:** the loader validates the requested split against the
+  dataset's real splits - it picks a sensible default when the default `train`
+  is missing and raises a clean `ValueError` listing the available splits
+  otherwise - and surfaces the lazy "pip install datasets" message. No opaque
+  `datasets` tracebacks reach the ComfyUI GUI.
 - ComfyUI imports are guarded with a fallback `IO`/`ComfyNodeABC` so tests run
   without ComfyUI.
 

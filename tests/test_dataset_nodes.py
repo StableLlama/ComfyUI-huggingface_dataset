@@ -14,8 +14,11 @@ from huggingface_dataset.dataset_nodes import (
     LoadHuggingFaceDataset,
     NODE_CLASS_MAPPINGS,
     NODE_DISPLAY_NAME_MAPPINGS,
+    _available_splits,
     _infer_file_builder,
+    _sensible_split,
     _to_python,
+    split_info,
 )
 
 
@@ -37,15 +40,28 @@ class FakeDataset:
 
 
 class FakeDatasets:
-    """Stand-in for the ``datasets`` module; records ``load_dataset`` calls."""
+    """Stand-in for the ``datasets`` module; records ``load_dataset`` calls.
 
-    def __init__(self, result: Any = None):
+    ``split_names`` controls what ``get_dataset_split_names`` reports. When it is
+    ``None`` the lookup raises, mimicking a dataset whose splits cannot be
+    determined (offline / needs config / custom loader script).
+    """
+
+    def __init__(self, result: Any = None, split_names: list[str] | None = None):
         self.calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+        self.split_calls: list[tuple[str, dict[str, Any]]] = []
         self._result = result
+        self.split_names = split_names
 
     def load_dataset(self, *args: Any, **kwargs: Any) -> Any:
         self.calls.append((args, kwargs))
         return self._result
+
+    def get_dataset_split_names(self, path: str, **kwargs: Any) -> list[str]:
+        self.split_calls.append((path, kwargs))
+        if self.split_names is None:
+            raise RuntimeError("cannot determine splits")
+        return list(self.split_names)
 
 
 class _Scalar:
@@ -303,3 +319,153 @@ def test_missing_datasets_raises_actionable_error(monkeypatch):
     monkeypatch.setattr(nodes, "_require_datasets", missing)
     with pytest.raises(ImportError, match="pip install datasets"):
         _make_node().load(path="myorg/my_dataset")
+
+
+# --------------------------------------------------------------------------- #
+# split dropdown & discovery
+# --------------------------------------------------------------------------- #
+
+
+def test_split_input_is_a_combo_with_fallback_options():
+    split_input = LoadHuggingFaceDataset.INPUT_TYPES()["required"]["split"]
+    options = split_input[0]
+    assert isinstance(options, tuple)
+    assert set(options) == {"train", "test", "validation"}
+    assert split_input[1]["default"] == "train"
+
+
+def test_available_splits_hub(monkeypatch):
+    fake = FakeDatasets(split_names=["train", "test"])
+    monkeypatch.setattr(nodes, "_require_datasets", lambda: fake)
+
+    assert _available_splits(path="myorg/my_dataset") == ["train", "test"]
+    (path, kwargs) = fake.split_calls[0]
+    assert path == "myorg/my_dataset"
+    assert kwargs == {}
+
+
+def test_available_splits_hub_with_config_and_revision(monkeypatch):
+    fake = FakeDatasets(split_names=["test"])
+    monkeypatch.setattr(nodes, "_require_datasets", lambda: fake)
+
+    assert _available_splits(path="glue", config="mrpc", revision="abc123") == ["test"]
+    (path, kwargs) = fake.split_calls[0]
+    assert path == "glue"
+    assert kwargs == {"config_name": "mrpc", "revision": "abc123"}
+
+
+def test_available_splits_file_builder_is_single_train_split(monkeypatch):
+    fake = FakeDatasets()
+    monkeypatch.setattr(nodes, "_require_datasets", lambda: fake)
+
+    assert _available_splits(path="/data/my_file.csv") == ["train"]
+    assert fake.split_calls == []
+
+
+def test_available_splits_empty_path_returns_empty_list(monkeypatch):
+    monkeypatch.setattr(nodes, "_require_datasets", lambda: FakeDatasets())
+    assert _available_splits(path="") == []
+
+
+def test_available_splits_unknown_returns_none(monkeypatch):
+    monkeypatch.setattr(nodes, "_require_datasets", lambda: FakeDatasets())
+    assert _available_splits(path="myorg/my_dataset") is None
+
+
+def test_sensible_split_prefers_train_then_validation_then_test():
+    assert _sensible_split(["test"]) == "test"
+    assert _sensible_split(["test", "validation"]) == "validation"
+    assert _sensible_split(["test", "train"]) == "train"
+    assert _sensible_split(["other"]) == "other"
+    assert _sensible_split([]) == "train"
+
+
+def test_default_split_auto_corrects_when_no_train(monkeypatch):
+    fake = FakeDatasets(result=FakeDataset(_rows(1)), split_names=["test"])
+    monkeypatch.setattr(nodes, "_require_datasets", lambda: fake)
+
+    _make_node().load(path="myorg/my_dataset")
+
+    (_, kwargs) = fake.calls[0]
+    assert kwargs["split"] == "test"
+
+
+def test_default_split_kept_when_train_present(monkeypatch):
+    fake = FakeDatasets(result=FakeDataset(_rows(1)), split_names=["train", "test"])
+    monkeypatch.setattr(nodes, "_require_datasets", lambda: fake)
+
+    _make_node().load(path="myorg/my_dataset")
+
+    (_, kwargs) = fake.calls[0]
+    assert kwargs["split"] == "train"
+
+
+def test_explicit_invalid_split_raises_clean_error(monkeypatch):
+    fake = FakeDatasets(result=FakeDataset(_rows(1)), split_names=["test"])
+    monkeypatch.setattr(nodes, "_require_datasets", lambda: fake)
+
+    with pytest.raises(ValueError, match=r"Available splits: test"):
+        _make_node().load(path="myorg/my_dataset", split="validation")
+
+
+def test_slicing_split_is_passed_through(monkeypatch):
+    fake = FakeDatasets(result=FakeDataset(_rows(1)), split_names=["train", "test"])
+    monkeypatch.setattr(nodes, "_require_datasets", lambda: fake)
+
+    _make_node().load(path="myorg/my_dataset", split="train[:10%]")
+
+    (_, kwargs) = fake.calls[0]
+    assert kwargs["split"] == "train[:10%]"
+
+
+def test_unknown_splits_pass_through_unchanged(monkeypatch):
+    # split_names=None => cannot introspect => request is forwarded unchanged
+    fake = FakeDatasets(result=FakeDataset(_rows(1)))
+    monkeypatch.setattr(nodes, "_require_datasets", lambda: fake)
+
+    _make_node().load(path="myorg/my_dataset", split="validation")
+
+    (_, kwargs) = fake.calls[0]
+    assert kwargs["split"] == "validation"
+
+
+def test_split_info_success(monkeypatch):
+    fake = FakeDatasets(split_names=["train", "test"])
+    monkeypatch.setattr(nodes, "_require_datasets", lambda: fake)
+
+    assert split_info(path="myorg/my_dataset") == {
+        "splits": ["train", "test"],
+        "default": "train",
+        "error": None,
+    }
+
+
+def test_split_info_default_is_sensible_for_test_only_dataset(monkeypatch):
+    fake = FakeDatasets(split_names=["test"])
+    monkeypatch.setattr(nodes, "_require_datasets", lambda: fake)
+
+    info = split_info(path="myorg/my_dataset")
+    assert info["splits"] == ["test"]
+    assert info["default"] == "test"
+    assert info["error"] is None
+
+
+def test_split_info_reports_missing_datasets(monkeypatch):
+    def missing() -> Any:
+        raise ImportError("The Hugging Face 'datasets' package is required to load datasets.\nInstall it with:  pip install datasets")
+
+    monkeypatch.setattr(nodes, "_require_datasets", missing)
+
+    info = split_info(path="myorg/my_dataset")
+    assert info["splits"] is None
+    assert info["default"] is None
+    assert "pip install datasets" in info["error"]
+
+
+def test_split_info_reports_unknown_splits(monkeypatch):
+    monkeypatch.setattr(nodes, "_require_datasets", lambda: FakeDatasets())
+
+    info = split_info(path="myorg/my_dataset")
+    assert info["splits"] is None
+    assert info["default"] is None
+    assert info["error"]

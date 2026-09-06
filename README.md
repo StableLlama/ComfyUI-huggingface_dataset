@@ -55,10 +55,10 @@ Loads a dataset and outputs the loaded `dataset` plus a `rows` Data List.
 
 | Input | Type | Default | Description |
 | --- | --- | --- | --- |
-| `path` | STRING | `""` | Hub dataset id (e.g. `rotten_tomatoes`, `lhoestq/demo1`) **or** a local/remote file or directory (see [Sources](#sources)). |
+| `path` | STRING | `""` | Hub dataset id (e.g. `stanfordnlp/imdb`) **or** a local/remote file or directory (see [Sources](#sources)). |
 | `loader` | STRING | `auto` | `auto` (infer from file extension), `hub`, or one of `csv`, `json`, `parquet`, `arrow`, `text`. |
-| `split` | STRING | `train` | Split to load, e.g. `train`, `test`, `validation`. Supports `datasets` slicing syntax, e.g. `train[:100]`, `train[:10%]`. |
-| `config` | STRING | `""` | Config/subset name for Hub datasets that have several configs (e.g. `glue` + config `mrpc`). |
+| `split` | COMBO | `train` | Split to load. A dropdown listing the splits of the selected source (see [Split selection](#split-selection)). |
+| `config` | STRING | `""` | Config/subset name for Hub datasets that have several configs (e.g. `nyu-mll/glue` + config `mrpc`). |
 | `revision` | STRING | `""` | Optional Hub revision: tag, branch name, or commit hash. |
 | `trust_remote_code` | BOOLEAN | `False` | Allow executing dataset loading code from the Hub. |
 | `limit` | INT | `-1` | Maximum number of rows to materialize into `rows`. `-1` = all rows. |
@@ -68,11 +68,30 @@ Loads a dataset and outputs the loaded `dataset` plus a `rows` Data List.
 | `dataset` | `HUGGINGFACE_DATASET` | The raw `datasets.Dataset` of the selected split. |
 | `rows` | `*` (Data List) | List of row dicts (one dict per row), capped by `limit`. |
 
+### Split selection
+
+The `split` dropdown is filled with the splits the selected dataset actually
+exposes:
+
+- it **refreshes automatically** when you change `path`, `config`, `revision`,
+  `loader` or `trust_remote_code`, and there is also a **Refresh splits** button
+  to re-query manually;
+- a **sensible default** is picked (in the order `train` → `validation` →
+  `test`) when the dataset has no `train` split - e.g. a dataset that only ships
+  a `test` split selects `test` automatically;
+- listing the splits requires the `datasets` package and (for Hub datasets)
+  network access. When the splits cannot be determined (offline, or a
+  multi-config dataset without a `config`, or a dataset that needs
+  `trust_remote_code`), the dropdown falls back to `train`/`test`/`validation`
+  and the node validates the split when it runs.
+- `datasets` slicing syntax is still honoured for values that come from an older
+  workflow, e.g. a stored `train[:100]` or `train[:10%]` continues to work.
+
 ### Sources
 
-- **Hugging Face Hub** — pass a repository id as `path`, e.g.
-  `rotten_tomatoes`, `glue` (with `config`), or `lhoestq/custom_squad` (with a
-  `revision`). Leave `loader` at `auto`.
+- **Hugging Face Hub** — pass the repository id (`namespace/name`) as `path`, e.g.
+  `stanfordnlp/imdb`, `nyu-mll/glue` (with `config`), or `HuggingFaceFW/fineweb` (with
+  a `revision`). Leave `loader` at `auto`.
 - **Local/remote files** — `csv`, `tsv`, `json`, `jsonl`, `parquet`, `arrow`,
   `txt`. With `loader = auto` the format is inferred from the file extension,
   otherwise pick the matching file builder explicitly. Globs (e.g.
@@ -81,11 +100,11 @@ Loads a dataset and outputs the loaded `dataset` plus a `rows` Data List.
 
 ### Example workflows
 
-Load the IMDb-style `rotten_tomatoes` dataset and count its rows:
+Load the IMDb reviews `stanfordnlp/imdb` dataset and count its rows:
 
 ```mermaid
 flowchart LR
-    A[Load Hugging Face Dataset<br/>path=rotten_tomatoes<br/>split=train] -->|rows| B[Data List length]
+    A[Load Hugging Face Dataset<br/>path=stanfordnlp/imdb<br/>split=train] -->|rows| B[Data List length]
 ```
 
 Feed the rows into the **Basic data handling** node pack for per-row processing,

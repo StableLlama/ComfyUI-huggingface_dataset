@@ -82,6 +82,12 @@ module = ["comfy", "comfy.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+# `server` (ComfyUI's own module) and `aiohttp` are only importable inside a
+# ComfyUI install; the HTTP route registration is guarded and a no-op elsewhere.
+module = ["server", "aiohttp", "aiohttp.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 # `datasets` is a declared dependency but is imported lazily (and may be absent
 # at type-check time); keep the strict check standalone-friendly.
 module = ["datasets", "datasets.*"]
