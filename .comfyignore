@@ -1,0 +1,23 @@
+# Development-only files, excluded from the published Comfy Registry archive.
+# `comfy node publish` packages the git-tracked files; this layers on top of
+# .gitignore to drop what is kept in git but not needed at runtime. The archive
+# must keep only what the nodes need: __init__.py, src/, web/ (in-app docs,
+# icon, splits extension), example_workflows/ (template browser) and the
+# packaging/metadata files.
+
+# CI / tooling
+.github/
+.vscode/
+.pre-commit-config.yaml
+.editorconfig
+.gitignore
+
+# Development-only docs & tests
+tests/
+AGENTS.md
+
+# Local caches (git-ignored anyway, listed for safety)
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
