@@ -126,11 +126,21 @@ function hookUpNode(node) {
   }
 
   // Manual refresh button (never serialized into workflows).
+  //
+  // The widget keeps a stable "__" internal name so the duplicate-guard above
+  // can find it again when hookUpNode runs on the onConfigure pass of the same
+  // node instance. ComfyUI renders button widgets as `label || name`, so
+  // without an explicit label the raw internal name ("__hfdsRefreshButton")
+  // would be shown on the node - set a friendly caption instead.
   if (!findWidget(node, "__hfdsRefreshButton")) {
     const button = node.addWidget("button", "Refresh splits", null, () => {
       refreshSplits(node);
     });
     button.name = "__hfdsRefreshButton";
+    button.label = "Refresh splits";
+    // Keep the button out of saved workflows. Modern litegraph omits widgets
+    // whose `serialize` flag is false (it no longer consults serializeValue).
+    button.serialize = false;
     button.serializeValue = () => undefined;
   }
 }
