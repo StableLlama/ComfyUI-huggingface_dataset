@@ -50,7 +50,6 @@ def _register_routes() -> None:
             loader=query.get("loader", "auto"),
             config=query.get("config", ""),
             revision=query.get("revision", ""),
-            trust_remote_code=query.get("trust_remote_code", "0") in ("1", "true", "True"),
         )
         return web.json_response(data)
 

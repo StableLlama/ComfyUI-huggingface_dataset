@@ -8,8 +8,9 @@ It loads a dataset from the Hugging Face Hub or from local/remote files using th
 [`datasets`](https://huggingface.co/docs/datasets/loading) library and exposes it
 in two forms:
 
-- **`dataset`** — the raw `datasets.Dataset` object of the selected split,
-  handed to ComfyUI as an opaque `HUGGINGFACE_DATASET` value.
+- **`dataset`** — the raw `datasets.Dataset` object of the selected split (a
+  lazy `datasets.IterableDataset` when `streaming` is on), handed to ComfyUI as
+  an opaque `HUGGINGFACE_DATASET` value.
 - **`rows`** — a ComfyUI *Data List* of row dicts (one dict per row), so every
   record can be processed further with generic data-handling nodes, for example
   from the **Basic data handling** node pack (convert to a ComfyUI `LIST` or
@@ -60,12 +61,12 @@ Loads a dataset and outputs the loaded `dataset` plus a `rows` Data List.
 | `split` | COMBO | `train` | Split to load. A dropdown listing the splits of the selected source (see [Split selection](#split-selection)). |
 | `config` | STRING | `""` | Config/subset name for Hub datasets that have several configs (e.g. `nyu-mll/glue` + config `mrpc`). |
 | `revision` | STRING | `""` | Optional Hub revision: tag, branch name, or commit hash. |
-| `trust_remote_code` | BOOLEAN | `False` | Allow executing dataset loading code from the Hub. |
+| `streaming` | BOOLEAN | `False` | Load the split as a lazy `IterableDataset` instead of downloading/caching it fully. |
 | `limit` | INT | `-1` | Maximum number of rows to materialize into `rows`. `-1` = all rows. |
 
 | Output | Type | Description |
 | --- | --- | --- |
-| `dataset` | `HUGGINGFACE_DATASET` | The raw `datasets.Dataset` of the selected split. |
+| `dataset` | `HUGGINGFACE_DATASET` | The raw `datasets.Dataset` of the selected split (or an `IterableDataset` with `streaming` on). |
 | `rows` | `*` (Data List) | List of row dicts (one dict per row), capped by `limit`. |
 
 ### Split selection
@@ -73,19 +74,29 @@ Loads a dataset and outputs the loaded `dataset` plus a `rows` Data List.
 The `split` dropdown is filled with the splits the selected dataset actually
 exposes:
 
-- it **refreshes automatically** when you change `path`, `config`, `revision`,
-  `loader` or `trust_remote_code`, and there is also a **Refresh splits** button
-  to re-query manually;
+- it **refreshes automatically** when you change `path`, `config`, `revision`
+  or `loader`, and there is also a **Refresh splits** button to re-query
+  manually;
 - a **sensible default** is picked (in the order `train` → `validation` →
   `test`) when the dataset has no `train` split - e.g. a dataset that only ships
   a `test` split selects `test` automatically;
 - listing the splits requires the `datasets` package and (for Hub datasets)
   network access. When the splits cannot be determined (offline, or a
-  multi-config dataset without a `config`, or a dataset that needs
-  `trust_remote_code`), the dropdown falls back to `train`/`test`/`validation`
-  and the node validates the split when it runs.
+  multi-config dataset without a `config`), the dropdown falls back to
+  `train`/`test`/`validation` and the node validates the split when it runs.
 - `datasets` slicing syntax is still honoured for values that come from an older
   workflow, e.g. a stored `train[:100]` or `train[:10%]` continues to work.
+
+### Streaming vs. full load
+
+With `streaming` off (the default) `datasets` downloads and caches the **whole
+split** before the first `limit` rows are materialized into the `rows` Data
+List - so `limit` caps the size of the returned `rows`, but *not* the download.
+With `streaming` on, the node loads the split as a lazy
+`datasets.IterableDataset` instead: nothing is downloaded until it is iterated,
+which makes it a memory/bandwidth-friendly way to feed only the first `limit`
+rows of a very large dataset into the graph. Note the `dataset` output is then
+an `IterableDataset` (no `len()`, single-pass) rather than a `datasets.Dataset`.
 
 ### Sources
 

@@ -37,20 +37,30 @@ package name).
   is missing; a clear "pip install datasets" error is raised on use. Do **not**
   import `datasets` at module import time.
 - **Row conversion:** rows are fetched as one batched slice and re-joined into
-  per-row dicts. `_to_python()` converts numpy scalars/arrays via duck-typing
-  (no hard numpy import) and leaves exotic objects (images, audio) unchanged.
+  per-row dicts for regular (`datasets.Dataset`) loads, or pulled one row at a
+  time from the iterable for `streaming` loads (`_materialize_rows_stream`).
+  `_to_python()` converts numpy scalars/arrays via duck-typing (no hard numpy
+  import) and leaves exotic objects (images, audio) unchanged.
 - **Data List output:** the `rows` output uses `OUTPUT_IS_LIST = (False, True)`
   so it behaves like the "Data List" producers of the Basic data handling pack.
 - **Split dropdown:** `split` is a COMBO (fallback options `train`/`test`/
   `validation`) whose real options come from the dataset. Split discovery uses
   `datasets.get_dataset_split_names` (see `_available_splits`); it returns
-  `None` on any failure (offline, multi-config without `config`, loader scripts)
-  and the loader then passes the requested value through unchanged. The
-  `/hfds/splits` HTTP endpoint (registered in `src/huggingface_dataset/__init__`
-  via ComfyUI's `PromptServer.routes`) serves splits + a sensible default; the
-  frontend extension `web/js/hf_dataset_splits.js` refreshes the widget on
-  `path`/`config`/`revision`/`loader`/`trust_remote_code` changes, on workflow
-  load and via its "Refresh splits" button.
+  `None` on any failure (offline, multi-config without `config`) and the loader
+  then passes the requested value through unchanged. The `/hfds/splits` HTTP
+  endpoint (registered in `src/huggingface_dataset/__init__` via ComfyUI's
+  `PromptServer.routes`) serves splits + a sensible default; the frontend
+  extension `web/js/hf_dataset_splits.js` refreshes the widget on
+  `path`/`config`/`revision`/`loader` changes, on workflow load and via its
+  "Refresh splits" button.
+- **Streaming:** `streaming` (BOOLEAN) loads the split via `streaming=True`,
+  which returns a `datasets.IterableDataset` (no `len`, single-pass) instead of
+  a materialized `datasets.Dataset`. The opaque `dataset` output deliberately
+  exposes either type; consumer nodes must dispatch on it. `rows` is
+  materialized by iterating (`_materialize_rows_stream`) when streaming rather
+  than by the batched-slice path (`_materialize_rows`), and `limit` bounds what
+  is fetched. `trust_remote_code` was removed: modern `datasets` no longer
+  supports executing Hub loading scripts.
 - **Friendly errors:** the loader validates the requested split against the
   dataset's real splits - it picks a sensible default when the default `train`
   is missing and raises a clean `ValueError` listing the available splits

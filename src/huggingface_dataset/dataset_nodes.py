@@ -3,7 +3,8 @@
 The loaded dataset is exposed in two forms:
 
 * ``dataset``  - the raw object returned by :func:`datasets.load_dataset` (a
-  :class:`datasets.Dataset` for a single split). It is handed to ComfyUI as an
+  :class:`datasets.Dataset`, or a :class:`datasets.IterableDataset` when
+  ``streaming`` is enabled, for a single split). It is handed to ComfyUI as an
   opaque ``HUGGINGFACE_DATASET`` value that other nodes can consume.
 * ``rows``     - the rows of the selected split materialized as a ComfyUI
   *Data List* (a Python ``list`` of ``dict`` rows), so each record can be
@@ -19,6 +20,7 @@ import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from inspect import cleandoc
+from itertools import islice
 from os import path as os_path
 from typing import Any
 
@@ -169,7 +171,6 @@ def _available_splits(
     loader: str = "auto",
     config: str = "",
     revision: str = "",
-    trust_remote_code: bool = False,
 ) -> list[str] | None:
     """Return the split names a dataset exposes, or ``None`` when they cannot be determined.
 
@@ -182,8 +183,8 @@ def _available_splits(
       ``datasets.get_dataset_split_names``.
 
     Returns ``None`` when the splits cannot be determined (network errors, a
-    multi-config Hub dataset without a ``config``, a loader script that needs
-    ``trust_remote_code``, ...) so callers can fall back to ``datasets`` itself.
+    multi-config Hub dataset without a ``config``, ...) so callers can fall back
+    to ``datasets`` itself.
     Raises :class:`ImportError` when the ``datasets`` package is missing so
     callers can surface the actionable install message.
     """
@@ -220,7 +221,6 @@ def _resolve_split(
     loader: str = "auto",
     config: str = "",
     revision: str = "",
-    trust_remote_code: bool = False,
 ) -> str:
     """Resolve the split to actually load, giving clean feedback on bad splits.
 
@@ -244,7 +244,6 @@ def _resolve_split(
             loader=loader,
             config=config,
             revision=revision,
-            trust_remote_code=trust_remote_code,
         )
     except ImportError:
         return requested  # "pip install datasets" surfaces later, from _load_dataset()
@@ -265,7 +264,6 @@ def split_info(
     loader: str = "auto",
     config: str = "",
     revision: str = "",
-    trust_remote_code: bool = False,
 ) -> dict[str, Any]:
     """Return the dataset's splits for the frontend dropdown (HTTP-friendly).
 
@@ -279,7 +277,6 @@ def split_info(
             loader=loader,
             config=config,
             revision=revision,
-            trust_remote_code=trust_remote_code,
         )
     except ImportError as exc:  # datasets missing -> actionable message
         return {"splits": None, "default": None, "error": str(exc)}
@@ -336,13 +333,16 @@ def _load_dataset(
     split: str = "train",
     config: str = "",
     revision: str = "",
-    trust_remote_code: bool = False,
+    streaming: bool = False,
 ) -> Any:
     """Load a single-split dataset with :func:`datasets.load_dataset`.
 
     ``path`` is either a Hub repository id (e.g. ``"stanfordnlp/imdb"``), a local
     dataset directory, or a local/remote/glob file path
-    (``csv``/``json``/``jsonl``/``parquet``/``arrow``/``txt``).
+    (``csv``/``json``/``jsonl``/``parquet``/``arrow``/``txt``). With
+    ``streaming=True`` the split comes back as a lazily-loaded
+    :class:`datasets.IterableDataset` (nothing is downloaded until iterated)
+    instead of a materialized :class:`datasets.Dataset`.
     """
     datasets = _require_datasets()
 
@@ -350,7 +350,7 @@ def _load_dataset(
         raise ValueError("'path' must not be empty: give a Hub dataset id or a file path.")
 
     active_split = split.strip() or "train"
-    kwargs: dict[str, Any] = {"split": active_split, "trust_remote_code": bool(trust_remote_code)}
+    kwargs: dict[str, Any] = {"split": active_split, "streaming": bool(streaming)}
     if revision.strip():
         kwargs["revision"] = revision.strip()
 
@@ -385,6 +385,18 @@ def _materialize_rows(dataset: Any, limit: int = -1) -> list[dict[str, Any]]:
     return [{column: _to_python(batch[column][index]) for column in columns} for index in range(stop)]
 
 
+def _materialize_rows_stream(dataset: Any, limit: int = -1) -> list[dict[str, Any]]:
+    """Return up to ``limit`` rows from a streaming ``IterableDataset``.
+
+    ``datasets.IterableDataset`` (what :func:`datasets.load_dataset` returns with
+    ``streaming=True``) has no ``len()`` and cannot be sliced, so rows are pulled
+    by iterating and each row dict is converted with :func:`_to_python`. A
+    negative ``limit`` (or ``None``) consumes the whole stream.
+    """
+    stream = islice(dataset, int(limit)) if limit is not None and limit >= 0 else dataset
+    return [{key: _to_python(value) for key, value in row.items()} for row in stream]
+
+
 class LoadHuggingFaceDataset(ComfyNodeABC):
     """Loads a Hugging Face dataset (Hub or local/remote files) into ComfyUI.
 
@@ -399,8 +411,20 @@ class LoadHuggingFaceDataset(ComfyNodeABC):
         format is inferred from the file extension; otherwise pick the matching
         file builder explicitly. Globs and ``https://`` / ``hf://`` URLs work too.
 
+    Modes:
+      - **Default** (``streaming`` off) downloads and caches the whole split and
+        returns a ``datasets.Dataset``.
+      - **Streaming** (``streaming`` on) returns a lazily-loaded
+        ``datasets.IterableDataset`` instead; data files are only fetched as the
+        dataset is iterated, so no full download/cache happens. Ideal for very
+        large datasets when only the first ``limit`` rows are needed as a
+        *Data List*.
+
     Outputs:
-      - ``dataset``: the raw ``datasets.Dataset`` of the selected split.
+      - ``dataset``: the raw ``datasets.Dataset`` (or
+        ``datasets.IterableDataset`` when ``streaming`` is on) of the selected
+        split. It is passed to ComfyUI as an opaque ``HUGGINGFACE_DATASET``
+        value; consumer nodes must handle both types.
       - ``rows``: a *Data List* of row dicts (one dict per row) ready for further
         processing with generic data-handling nodes. ``limit`` caps how many
         rows are materialized (``-1`` = all).
@@ -417,7 +441,7 @@ class LoadHuggingFaceDataset(ComfyNodeABC):
                 "split": (_FALLBACK_SPLITS, {"default": _DEFAULT_SPLIT}),
                 "config": (IO.STRING, {"default": "", "multiline": False}),
                 "revision": (IO.STRING, {"default": "", "multiline": False}),
-                "trust_remote_code": (IO.BOOLEAN, {"default": False}),
+                "streaming": (IO.BOOLEAN, {"default": False}),
                 "limit": (IO.INT, {"default": -1, "min": -1, "max": INT_MAX, "step": 1}),
             }
         }
@@ -436,7 +460,7 @@ class LoadHuggingFaceDataset(ComfyNodeABC):
         split: str = "train",
         config: str = "",
         revision: str = "",
-        trust_remote_code: bool = False,
+        streaming: bool = False,
         limit: int = -1,
     ) -> tuple[Any, list[dict[str, Any]]]:
         """Load the dataset and return ``(dataset, rows)``."""
@@ -447,7 +471,6 @@ class LoadHuggingFaceDataset(ComfyNodeABC):
             loader=loader,
             config=config,
             revision=revision,
-            trust_remote_code=trust_remote_code,
         )
         dataset = _load_dataset(
             path=path,
@@ -455,9 +478,12 @@ class LoadHuggingFaceDataset(ComfyNodeABC):
             split=active_split,
             config=config,
             revision=revision,
-            trust_remote_code=trust_remote_code,
+            streaming=streaming,
         )
-        rows = _materialize_rows(dataset, limit)
+        if streaming:
+            rows = _materialize_rows_stream(dataset, limit)
+        else:
+            rows = _materialize_rows(dataset, limit)
         return (dataset, rows)
 
 

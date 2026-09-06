@@ -1,8 +1,8 @@
 // ComfyUI extension: refresh the "split" dropdown of the Hugging Face Dataset
 // Loader with the actual splits of the dataset entered in "path".
 //
-// * auto-refreshes (debounced) when `path`/`loader`/`config`/`revision`/
-//   `trust_remote_code` change,
+// * auto-refreshes (debounced) when `path`/`loader`/`config`/`revision`
+//   change,
 // * refreshes when a workflow is loaded / the node is configured,
 // * offers a manual "Refresh splits" button.
 //
@@ -17,7 +17,7 @@ const NODE_CLASS = "LoadHuggingFaceDataset";
 const DEFAULT_SPLIT = "train";
 const FALLBACK_SPLITS = ["train", "test", "validation"];
 const PREFERRED_ORDER = [DEFAULT_SPLIT, "validation", "test"];
-const TRIGGER_INPUTS = ["path", "loader", "config", "revision", "trust_remote_code"];
+const TRIGGER_INPUTS = ["path", "loader", "config", "revision"];
 
 function findWidget(node, name) {
   return (node.widgets || []).find((widget) => widget.name === name) || null;
@@ -79,7 +79,6 @@ async function refreshSplits(node) {
     loader: String(findWidget(node, "loader")?.value ?? "auto"),
     config: String(findWidget(node, "config")?.value ?? ""),
     revision: String(findWidget(node, "revision")?.value ?? ""),
-    trust_remote_code: findWidget(node, "trust_remote_code")?.value ? "1" : "0",
   });
 
   let payload;

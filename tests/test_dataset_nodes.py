@@ -39,6 +39,20 @@ class FakeDataset:
         return self._rows[key]
 
 
+class FakeIterableDataset:
+    """Minimal stand-in for a streaming ``datasets.IterableDataset``.
+
+    Iterable (like the real streaming object) but with no ``len()`` and no
+    slicing - exactly what ``streaming=True`` hands back.
+    """
+
+    def __init__(self, rows: list[dict[str, Any]]):
+        self._rows = list(rows)
+
+    def __iter__(self) -> Any:
+        return iter(self._rows)
+
+
 class FakeDatasets:
     """Stand-in for the ``datasets`` module; records ``load_dataset`` calls.
 
@@ -113,7 +127,7 @@ def test_node_is_registered():
 def test_node_metadata():
     node = _make_node()
     inputs = node.INPUT_TYPES()["required"]
-    assert set(inputs) == {"path", "loader", "split", "config", "revision", "trust_remote_code", "limit"}
+    assert set(inputs) == {"path", "loader", "split", "config", "revision", "streaming", "limit"}
     assert node.RETURN_TYPES[0] == "HUGGINGFACE_DATASET"
     assert node.RETURN_NAMES == ("dataset", "rows")
     assert node.OUTPUT_IS_LIST == (False, True)
@@ -136,7 +150,7 @@ def test_hub_load_default(monkeypatch):
     assert rows == data
     (args, kwargs) = fake.calls[0]
     assert args == ("myorg/my_dataset",)
-    assert kwargs == {"split": "train", "trust_remote_code": False}
+    assert kwargs == {"split": "train", "streaming": False}
 
 
 def test_hub_load_with_config_split_and_revision(monkeypatch):
@@ -146,7 +160,7 @@ def test_hub_load_with_config_split_and_revision(monkeypatch):
 
     (args, kwargs) = fake.calls[0]
     assert args == ("glue", "mrpc")
-    assert kwargs == {"split": "validation", "revision": "abc123", "trust_remote_code": False}
+    assert kwargs == {"split": "validation", "revision": "abc123", "streaming": False}
 
 
 def test_empty_split_falls_back_to_train(monkeypatch):
@@ -269,6 +283,52 @@ def test_empty_dataset_returns_empty_rows(monkeypatch):
 
     assert len(dataset) == 0
     assert rows == []
+
+
+# --------------------------------------------------------------------------- #
+# streaming loading
+# --------------------------------------------------------------------------- #
+
+
+def test_streaming_forwards_flag_and_returns_iterable(monkeypatch):
+    data = _rows(3)
+    fake = _install_fake(monkeypatch, result=FakeIterableDataset(data))
+
+    dataset, rows = _make_node().load(path="myorg/my_dataset", streaming=True)
+
+    assert isinstance(dataset, FakeIterableDataset)
+    assert rows == data
+    (_, kwargs) = fake.calls[0]
+    assert kwargs == {"split": "train", "streaming": True}
+
+
+def test_streaming_limit_caps_rows(monkeypatch):
+    data = _rows(5)
+    _install_fake(monkeypatch, result=FakeIterableDataset(data))
+
+    _, rows = _make_node().load(path="myorg/my_dataset", streaming=True, limit=2)
+
+    assert rows == data[:2]
+
+
+def test_streaming_zero_limit_returns_no_rows(monkeypatch):
+    _install_fake(monkeypatch, result=FakeIterableDataset(_rows(5)))
+
+    _, rows = _make_node().load(path="myorg/my_dataset", streaming=True, limit=0)
+
+    assert rows == []
+
+
+def test_streaming_off_uses_materialized_dataset(monkeypatch):
+    data = _rows(3)
+    fake = _install_fake(monkeypatch, result=FakeDataset(data))
+
+    dataset, rows = _make_node().load(path="myorg/my_dataset", streaming=False)
+
+    assert isinstance(dataset, FakeDataset)
+    assert rows == data
+    (_, kwargs) = fake.calls[0]
+    assert kwargs["streaming"] is False
 
 
 # --------------------------------------------------------------------------- #
