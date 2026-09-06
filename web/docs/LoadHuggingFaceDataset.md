@@ -84,3 +84,16 @@ Loader (path=stanfordnlp/imdb, split=train)
 > Requires the Python package `datasets` (`pip install datasets`). It is
 > installed automatically when the node is installed through ComfyUI-Manager or
 > the Comfy Registry; a missing one shows a clear install message in the GUI.
+
+### Use with Basic data handling
+
+`rows` is already a ComfyUI *Data List*, so the **Basic data handling** pack can
+consume it directly:
+
+- `Data List → length` / `count` — how many rows were materialised.
+- `Data List → get item (index=0)` → `DICT → get (key=text)` — read one field of
+  one row.
+- Connect `rows` straight into a `DICT → get`, `STRING` or `cast` node — such
+  nodes run once per row and return a Data List of results (per-row mapping).
+
+See the README's *Working with Basic data handling* section for more recipes.

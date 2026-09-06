@@ -33,5 +33,8 @@ data handling:
 
 ```text
 Loader (path=stanfordnlp/imdb) ── dataset → Filter (column=label, ==, value=1)
-  ── dataset → To Data List (limit=100) ── rows → Basic: Data List length
+  ── dataset → To Data List (limit=100) ── rows → Data List → length (Basic data handling)
 ```
+
+You can also map over the rows: connect the `rows` Data List straight into a
+`Basic/DICT → get`, `STRING` or `cast` node, and it runs once per row.

@@ -2,7 +2,7 @@
 
 Converts a `HUGGINGFACE_DATASET` (fully-loaded **or** streaming) into a single
 Python list value — a *LIST* as defined by the **Basic data handling** pack — so
-it feeds nodes such as `List length`, `List get item`, `List concatenate`, etc.
+it feeds the Basic `LIST` nodes such as `length`, `get item`, etc.
 
 ## Inputs
 
@@ -32,5 +32,5 @@ Expose the review text of the first 100 rows as a LIST of strings:
 
 ```text
 Loader (streaming=true) ── dataset → Take (n=100) ── dataset
-  → To LIST (column=text) ── list → Basic: List length / List get item
+  → To LIST (column=text) ── list → LIST → length / get item (Basic data handling)
 ```

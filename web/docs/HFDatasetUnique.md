@@ -30,3 +30,7 @@ List every distinct label of the IMDb train split:
 ```text
 Loader (path=stanfordnlp/imdb, split=train) ── dataset → Unique (column=label)
 ```
+
+The `values` output is a ComfyUI *Data List* — count the distinct labels with
+`Data List → length`, or turn them into a plain `LIST` with
+`Data List → convert to LIST` (Basic data handling).

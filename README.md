@@ -147,25 +147,27 @@ an `IterableDataset` (no `len()`, single-pass) rather than a `datasets.Dataset`.
 
 ### Example workflows
 
-Load the IMDb reviews `stanfordnlp/imdb` dataset and count its rows:
+Load the IMDb reviews `stanfordnlp/imdb` dataset and count its rows with the
+**Basic data handling** pack (`Basic → Data List → length`):
 
 ```mermaid
 flowchart LR
-    A[Load Hugging Face Dataset<br/>path=stanfordnlp/imdb<br/>split=train] -->|rows| B[Data List length]
+    A[Load Hugging Face Dataset<br/>path=stanfordnlp/imdb<br/>split=train] -->|rows| B[Data List → length]
 ```
 
-Feed the rows into the **Basic data handling** node pack for per-row processing,
-e.g. turn each row dict into a string, or take fields out of a specific row:
+Take the review text of one specific row — `rows` is a *Data List* of row
+dicts, so first pull a row, then read its `text` field:
 
 ```mermaid
 flowchart LR
-    A[Load Hugging Face Dataset] -->|rows| B[Basic: get item<br/>index=0]
-    B --> C[Basic: DICT get<br/>key=text]
+    A[Load Hugging Face Dataset] -->|rows| B[Data List → get item<br/>index=0]
+    B --> C[DICT → get<br/>key=text]
 ```
 
 > [!TIP]
-> `rows` is already a ComfyUI *Data List* — it can be connected straight into the
-> **Data List** and **LIST** nodes of the **Basic data handling** pack.
+> `rows` is already a ComfyUI *Data List* — see
+> [Working with Basic data handling](#working-with-basic-data-handling) for many
+> more ways to slice, map and consume it with the **Basic data handling** pack.
 
 ## Dataset nodes
 
@@ -208,7 +210,7 @@ dataset (fully-loaded **or** streaming) can be turned into both:
 
 | Node | Output | Description |
 | --- | --- | --- |
-| **🤗 Dataset To LIST** | `LIST` | One Python list value of all rows (a *LIST* as Basic data handling defines it, so it feeds `List length`, `List get item`, ...). With a `column` set, the list holds that column's values instead of row dicts. |
+| **🤗 Dataset To LIST** | `LIST` | One Python list value of all rows (a *LIST* as Basic data handling defines it, so it feeds `LIST → length`, `LIST → get item`, ...). With a `column` set, the list holds that column's values instead of row dicts. |
 | **🤗 Dataset To Data List** | `*` (Data List) | The same rows exposed as a ComfyUI *Data List* (like the loader's `rows` output): Basic *Data List* nodes receive the whole list in one call, other nodes run once per row. |
 
 Both honour a `limit` widget (`-1` = all rows) — handy for pulling only the
@@ -224,8 +226,74 @@ flowchart LR
     A[Load Hugging Face Dataset<br/>path=stanfordnlp/imdb<br/>split=train] -->|dataset| B[🤗 Dataset Filter<br/>column=label operator== value=1]
     B -->|dataset| C[🤗 Dataset Map Column<br/>column=row_id operation=row index]
     C -->|dataset| D[🤗 Dataset To Data List]
-    D -->|rows| E[Basic: Data List length]
+    D -->|rows| E[Data List → length]
 ```
+
+## Working with Basic data handling
+
+The [Basic data handling](https://github.com/StableLlama/ComfyUI-basic_data_handling)
+pack provides everyday data nodes — lists, dicts, strings, maths, flow control
+and more. These Hugging Face nodes hand data to it in the two shapes it already
+understands, so rows can be counted, inspected, mapped and consumed with almost
+no manual conversion:
+
+- **`*` Data List** — one item per row: the loader's `rows` output,
+  `🤗 Dataset To Data List`, and the `values` output of `🤗 Dataset Unique`.
+- **`LIST`** — one Python list value: `🤗 Dataset To LIST`.
+
+Rows are plain dicts keyed by the dataset's column names. Values are converted
+to plain Python (numpy scalars/arrays are handled for you); objects such as
+images or audio pass through unchanged. Install the Basic pack from
+ComfyUI-Manager or the registry — its nodes appear under the `Basic/…` menus
+(`Basic/Data List`, `Basic/LIST`, `Basic/DICT`, `Basic/STRING`, `Basic/cast`,
+...).
+
+### Whole-list nodes vs. per-row mapping
+
+A *Data List* can be wired into Basic nodes in two ways:
+
+- **Whole-list nodes** (`Basic/Data List` and `Basic/LIST`) receive the whole
+  list in one call — e.g. `length`, `count`, `first`, `get item`,
+  `convert to LIST`, `convert to Data List`.
+- **Per-row mapping** — connect the Data List into any *other* Basic node (a
+  `Basic/DICT`, `Basic/STRING` or `Basic/cast` node). ComfyUI then runs that
+  node once for every row, and its output is a new Data List with one result
+  per row. This is the idiomatic way to transform every record in one go.
+
+### Recipes
+
+Count the loaded rows, and read the review text of the first row:
+
+```mermaid
+flowchart LR
+    A[Load Hugging Face Dataset<br/>path=stanfordnlp/imdb] -->|rows| L[Data List → length]
+    A -->|rows| G[Data List → get item<br/>index=0]
+    G --> T[DICT → get<br/>key=text]
+```
+
+Map every row to one field — pull `text` out of each row with a per-row
+`DICT → get`, then join the results into a single string:
+
+```mermaid
+flowchart LR
+    A[Load Hugging Face Dataset<br/>limit=100] -->|rows| G[DICT → get<br/>key=text]
+    G --> J[STRING → join (from data list)<br/>separator= ---]
+```
+
+- **Turn whole rows into text** — `rows` → `Basic/cast → to STRING`, then use any
+  `Basic/STRING` node.
+- **One column of all rows as a `LIST`** — `🤗 Dataset To LIST (column=text)` →
+  `Basic/LIST → length` / `get item` / `first`, or
+  `Basic/LIST → convert to Data List` to switch back to per-row processing.
+- **Shape before materialising** — build the rows you want with the transform
+  nodes first (`🤗 Dataset Filter`, `Map Column`, `Select Columns`, ...), then
+  feed `🤗 Dataset To Data List` / `To LIST` into Basic.
+- **Unique values** — `🤗 Dataset Unique (column=label)` →
+  `Basic/Data List → length`, or `Basic/Data List → convert to LIST`.
+
+These patterns work for every Data List the pack produces — the loader's `rows`
+as well as any `🤗 Dataset To Data List` fed from a transform chain — and the
+`limit` widget (or a `Take` / `Skip`) bounds how many rows are materialised.
 
 ## Example workflow templates
 

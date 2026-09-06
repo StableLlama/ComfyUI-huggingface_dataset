@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `INPUT_TYPES` plus `OUTPUT_TOOLTIPS`), so hovering a widget shows help and the
   ComfyUI node documentation panel lists rich parameter descriptions instead of
   empty rows.
+- Documentation: a README "Working with Basic data handling" guide plus
+  in-node doc call-outs that show how the `rows` / `LIST` / `Data List` outputs
+  plug straight into the "Basic data handling" pack (whole-list nodes and
+  per-row mapping recipes, using its real menu labels).
 - A family of transform nodes that consume the opaque `HUGGINGFACE_DATASET`
   value (the loader's `dataset` output) and expose the data-wrangling methods of
   the `datasets` library as ComfyUI nodes, so a dataset can be shaped *before*
