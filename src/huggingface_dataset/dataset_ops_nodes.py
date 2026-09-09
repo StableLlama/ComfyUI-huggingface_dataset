@@ -1024,6 +1024,38 @@ class HFDatasetSplit(ComfyNodeABC):
 # --------------------------------------------------------------------------- #
 
 
+class HFDatasetCount(ComfyNodeABC):
+    """Returns the number of entries (rows) of a fully-loaded dataset.
+
+    Counts the rows of the dataset (``len``) and hands the number back as an
+    INT. Only available on a fully-loaded dataset - a streaming one has no
+    ``len`` and counting it would consume every row - so disable ``streaming``
+    on the loader (or feed in a materialized output of another dataset node).
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls) -> dict[str, Any]:
+        return {
+            "required": {
+                "dataset": (
+                    HUGGINGFACE_DATASET,
+                    {"tooltip": "Fully-loaded dataset whose number of entries to count (from the 🤗 Dataset Loader or another dataset node)."},
+                ),
+            }
+        }
+
+    RETURN_TYPES = (IO.INT,)
+    RETURN_NAMES = ("count",)
+    OUTPUT_TOOLTIPS = ("The number of rows (entries) in the dataset.",)
+    CATEGORY = _CATEGORY
+    DESCRIPTION = cleandoc(__doc__ or "")
+    FUNCTION = "count_rows"
+
+    def count_rows(self, dataset: Any) -> tuple[int]:
+        _ensure_materialized(dataset)
+        return (len(dataset),)
+
+
 class HFDatasetUnique(ComfyNodeABC):
     """Returns the unique values of a column of a fully-loaded dataset.
 
@@ -1182,6 +1214,7 @@ NODE_CLASS_MAPPINGS = {
     "HFDatasetFilter": HFDatasetFilter,
     "HFDatasetMapColumn": HFDatasetMapColumn,
     "HFDatasetSplit": HFDatasetSplit,
+    "HFDatasetCount": HFDatasetCount,
     "HFDatasetUnique": HFDatasetUnique,
     "HFDatasetToList": HFDatasetToList,
     "HFDatasetToDataList": HFDatasetToDataList,
@@ -1201,6 +1234,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "HFDatasetFilter": "🤗 Dataset Filter",
     "HFDatasetMapColumn": "🤗 Dataset Map Column",
     "HFDatasetSplit": "🤗 Dataset Train/Test Split",
+    "HFDatasetCount": "🤗 Dataset Count",
     "HFDatasetUnique": "🤗 Dataset Unique",
     "HFDatasetToList": "🤗 Dataset To LIST",
     "HFDatasetToDataList": "🤗 Dataset To Data List",

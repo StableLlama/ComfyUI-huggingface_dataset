@@ -197,6 +197,7 @@ traceback: disable `streaming` on the loader for those.
 | **🤗 Dataset Map Column** | Adds/replaces `column` per row from a `constant`, a copy of another column, or the `row index` (`map`). | ✅ |
 | **🤗 Dataset Train/Test Split** | Randomly splits into `train` and `test` outputs (`train_test_split`). | loaded only |
 | **🤗 Dataset Unique** | Returns the unique `column` values as a *Data List* (`unique`). | loaded only |
+| **🤗 Dataset Count** | Returns the number of rows (`len`) as an `INT`. | loaded only |
 
 **Filter operators:** `==`, `!=`, `<`, `<=`, `>`, `>=` (the `value` text is
 coerced to the column's type, so numeric columns compare with plain numbers),

@@ -226,7 +226,7 @@ def test_op_metadata_shape():
     dataset_nodes = [
         name
         for name in ops.NODE_CLASS_MAPPINGS
-        if name not in ("HFDatasetSplit", "HFDatasetUnique", "HFDatasetToList", "HFDatasetToDataList")
+        if name not in ("HFDatasetSplit", "HFDatasetCount", "HFDatasetUnique", "HFDatasetToList", "HFDatasetToDataList")
     ]
     for name in dataset_nodes:
         node_class = ops.NODE_CLASS_MAPPINGS[name]
@@ -256,6 +256,10 @@ def test_special_nodes_metadata():
     split = ops.HFDatasetSplit()
     assert split.RETURN_TYPES == ("HUGGINGFACE_DATASET", "HUGGINGFACE_DATASET")
     assert split.RETURN_NAMES == ("train", "test")
+
+    count = ops.HFDatasetCount()
+    assert count.RETURN_TYPES == (ops.IO.INT,)
+    assert count.RETURN_NAMES == ("count",)
 
     unique = ops.HFDatasetUnique()
     assert unique.OUTPUT_IS_LIST == (True,)
@@ -555,6 +559,28 @@ def test_unique_values():
         ops.HFDatasetUnique().unique_values(dataset=FakeIterableDataset([{"label": 1}]), column="label")
     with pytest.raises(ValueError, match="Unknown column"):
         ops.HFDatasetUnique().unique_values(dataset=ds, column="nope")
+
+
+# --------------------------------------------------------------------------- #
+# Counting
+# --------------------------------------------------------------------------- #
+
+
+def test_count_rows_on_materialized():
+    ds = FakeDataset(_rows(5))
+    (count,) = ops.HFDatasetCount().count_rows(dataset=ds)
+    assert count == 5
+    assert isinstance(count, int)
+
+
+def test_count_empty_dataset():
+    (count,) = ops.HFDatasetCount().count_rows(dataset=FakeDataset([]))
+    assert count == 0
+
+
+def test_count_rejects_streaming():
+    with pytest.raises(ValueError, match="streaming"):
+        ops.HFDatasetCount().count_rows(dataset=FakeIterableDataset(_rows(5)))
 
 
 # --------------------------------------------------------------------------- #

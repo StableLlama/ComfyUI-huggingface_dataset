@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "huggingface_dataset"
-version = "1.0.0"
+version = "1.1.0"
 description = """A custom ComfyUI node to load Hugging Face datasets and make them available for further processing.
 
 The node loads a dataset from the Hugging Face Hub or from local/remote files

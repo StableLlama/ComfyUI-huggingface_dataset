@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-09-09
+
+### Added
+
+- `HFDatasetCount` (`🤗 Dataset Count`) — returns the number of entries (rows)
+  of a fully-loaded dataset as an `INT` (`len`). Counting needs a materialized
+  `datasets.Dataset`; a streaming `IterableDataset` input raises a clear
+  "disable streaming" error instead of an opaque traceback, matching the other
+  loaded-only operations (`sort`, `select`, `unique`, `flatten`, ...). Includes
+  in-app documentation, a README entry, unit tests and a proper `tooltip` /
+  `OUTPUT_TOOLTIPS` pair.
+
 ## [1.0.0] - 2026-09-06
 
 Initial release of the `huggingface_dataset` pack for ComfyUI: load a Hugging
