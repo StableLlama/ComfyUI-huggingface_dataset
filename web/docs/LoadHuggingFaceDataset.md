@@ -40,9 +40,10 @@ rest of the graph in two forms:
 ## Split selection
 
 The `split` dropdown lists the splits of the selected source. It refreshes
-automatically when `path` / `config` / `revision` / `loader` change (use the
-**Refresh splits** button to re-query manually). When the dataset has no
-`train` split a sensible default is picked (`train` → `validation` → `test`).
+automatically when `path` / `config` / `revision` / `loader` change, when a
+workflow is loaded, and again when you click **Force reload**. When the dataset
+has no `train` split a sensible default is picked (`train` → `validation` →
+`test`).
 
 If the splits can't be determined (offline, or a multi-config dataset without a
 `config`), the dropdown falls back to `train`/`test`/`validation` and the node
@@ -60,6 +61,21 @@ way to pull only the first rows of a very large dataset. Note that the
 `dataset` output is then an `IterableDataset` (no `len()`, single pass) — some
 downstream operations need a fully-loaded dataset, disable `streaming` for
 those.
+
+## Force reload
+
+The **Force reload** button does two things at once: it re-queries the dataset's
+splits (so the `split` dropdown is in sync) and then forces the loader to
+re-fetch the dataset. ComfyUI caches a node's output on its inputs, so
+re-running a workflow normally reuses the dataset you already loaded — even if
+the source changed on the Hub or on disk. Clicking **Force reload** bumps an
+internal `reload_tick` counter (a hidden input of the node) to invalidate that
+cache and re-runs the workflow so the dataset is fetched fresh.
+
+Use it after the source dataset has been updated and you want the loader to
+pick up the new rows without having to change `path` / `revision` / … yourself.
+It also replaces the old manual "Refresh splits" button — the split dropdown
+still refreshes automatically when the source inputs change.
 
 ## Sources
 

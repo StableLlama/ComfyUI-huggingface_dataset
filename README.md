@@ -111,8 +111,8 @@ The `split` dropdown is filled with the splits the selected dataset actually
 exposes:
 
 - it **refreshes automatically** when you change `path`, `config`, `revision`
-  or `loader`, and there is also a **Refresh splits** button to re-query
-  manually;
+  or `loader`, when a workflow is loaded, and again when you click **Force
+  reload** (see below);
 - a **sensible default** is picked (in the order `train` → `validation` →
   `test`) when the dataset has no `train` split - e.g. a dataset that only ships
   a `test` split selects `test` automatically;
@@ -133,6 +133,16 @@ With `streaming` on, the node loads the split as a lazy
 which makes it a memory/bandwidth-friendly way to feed only the first `limit`
 rows of a very large dataset into the graph. Note the `dataset` output is then
 an `IterableDataset` (no `len()`, single-pass) rather than a `datasets.Dataset`.
+
+### Force reload
+
+ComfyUI caches a node's output on its inputs, so re-running a workflow normally
+reuses the dataset you already loaded — even if the source changed on the Hub or
+on disk. The loader has a single **Force reload** button that does two things:
+it re-queries the dataset's splits (so the `split` dropdown is in sync, replacing
+the old manual "Refresh splits" button) and bumps an internal `reload_tick`
+counter (a hidden input) to invalidate the cache, then re-runs the workflow so
+the dataset is fetched fresh.
 
 ### Sources
 

@@ -127,7 +127,7 @@ def test_node_is_registered():
 def test_node_metadata():
     node = _make_node()
     inputs = node.INPUT_TYPES()["required"]
-    assert set(inputs) == {"path", "loader", "split", "config", "revision", "streaming", "limit"}
+    assert set(inputs) == {"path", "loader", "split", "config", "revision", "streaming", "limit", "reload_tick"}
     assert node.RETURN_TYPES[0] == "HUGGINGFACE_DATASET"
     assert node.RETURN_NAMES == ("dataset", "rows")
     assert node.OUTPUT_IS_LIST == (False, True)

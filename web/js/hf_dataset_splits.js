@@ -1,10 +1,13 @@
 // ComfyUI extension: refresh the "split" dropdown of the Hugging Face Dataset
-// Loader with the actual splits of the dataset entered in "path".
+// Loader with the actual splits of the dataset entered in "path", and add a
+// "Force reload" button that refreshes the dropdown and re-fetches the dataset.
 //
-// * auto-refreshes (debounced) when `path`/`loader`/`config`/`revision`
-//   change,
-// * refreshes when a workflow is loaded / the node is configured,
-// * offers a manual "Refresh splits" button.
+// * the split dropdown auto-refreshes (debounced) when
+//   `path`/`loader`/`config`/`revision` change, and refreshes when a workflow
+//   is loaded / the node is configured;
+// * a single "Force reload" button both re-queries the splits and bumps the
+//   hidden `reload_tick` input, re-running the workflow so the data is loaded
+//   fresh even when the other inputs are unchanged.
 //
 // The values below must stay in sync with `_DEFAULT_SPLIT` / `_FALLBACK_SPLITS`
 // in src/huggingface_dataset/dataset_nodes.py.
@@ -110,6 +113,38 @@ function scheduleRefresh(node) {
   }, 350);
 }
 
+// The single "Force reload" button: refresh the split dropdown with the
+// dataset's real splits, then force the loader to re-fetch the dataset even
+// when every other input is unchanged. ComfyUI caches a node's output on its
+// inputs, so we bump the hidden `reload_tick` counter (a real input of the
+// node) to invalidate that cache, then re-run the graph so the fresh data
+// flows through immediately.
+async function forceReload(node) {
+  // Keep the split dropdown in sync first. If a previously selected split no
+  // longer exists, refreshSplits picks a sensible default, so the reload uses a
+  // valid split. It warns on failure rather than throwing, but guard anyway so
+  // a split-refresh hiccup can never block the actual reload.
+  try {
+    await refreshSplits(node);
+  } catch (error) {
+    console.warn("[Hugging Face Dataset] Could not refresh splits while reloading:", error);
+  }
+
+  const tick = findWidget(node, "reload_tick");
+  if (tick) {
+    tick.value = (Number(tick.value) || 0) + 1;
+  }
+  app.graph.setDirtyCanvas(true, true);
+  // Re-run the graph so the fresh dataset flows through right away. `queuePrompt`
+  // returns a promise; swallow rejections so a broken graph doesn't spam the console.
+  const result = app.queuePrompt(0);
+  if (result && typeof result.catch === "function") {
+    result.catch((error) =>
+      console.warn("[Hugging Face Dataset] Could not queue reload:", error),
+    );
+  }
+}
+
 function hookUpNode(node) {
   if (!findWidget(node, "split")) return;
 
@@ -124,21 +159,28 @@ function hookUpNode(node) {
     };
   }
 
-  // Manual refresh button (never serialized into workflows).
+  // "Force reload" button: refreshes the split dropdown and bumps the hidden
+  // `reload_tick` counter to invalidate ComfyUI's output cache, re-fetching the
+  // dataset. It is the only button (it also covers the old "Refresh splits"
+  // action, so that manual button is not needed). Never serialized.
   //
-  // The widget keeps a stable "__" internal name so the duplicate-guard above
-  // can find it again when hookUpNode runs on the onConfigure pass of the same
-  // node instance. ComfyUI renders button widgets as `label || name`, so
-  // without an explicit label the raw internal name ("__hfdsRefreshButton")
-  // would be shown on the node - set a friendly caption instead.
-  if (!findWidget(node, "__hfdsRefreshButton")) {
-    const button = node.addWidget("button", "Refresh splits", null, () => {
-      refreshSplits(node);
+  // The widget keeps a stable "__" internal name so the duplicate-guard
+  // (findWidget) can find it again when hookUpNode runs on the onConfigure pass
+  // of the same node instance. ComfyUI renders button widgets as `label || name`,
+  // so without an explicit label the raw internal name would be shown - set a
+  // friendly caption instead.
+  const reloadTick = findWidget(node, "reload_tick");
+  if (reloadTick) {
+    reloadTick.hidden = true;
+    reloadTick.options = reloadTick.options || {};
+    reloadTick.options.hidden = true;
+  }
+  if (!findWidget(node, "__hfdsReloadButton")) {
+    const button = node.addWidget("button", "Force reload", null, () => {
+      forceReload(node);
     });
-    button.name = "__hfdsRefreshButton";
-    button.label = "Refresh splits";
-    // Keep the button out of saved workflows. Modern litegraph omits widgets
-    // whose `serialize` flag is false (it no longer consults serializeValue).
+    button.name = "__hfdsReloadButton";
+    button.label = "Force reload";
     button.serialize = false;
     button.serializeValue = () => undefined;
   }

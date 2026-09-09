@@ -518,6 +518,21 @@ class LoadHuggingFaceDataset(ComfyNodeABC):
                         "tooltip": "Maximum number of rows to materialize into the 'rows' Data List; -1 = all.",
                     },
                 ),
+                # Cache-buster used by the frontend "Force reload" button. The
+                # frontend hides this widget and increments it on click; because
+                # the value is part of this node's inputs, ComfyUI re-runs the
+                # loader and re-fetches the dataset even when the other inputs
+                # are unchanged. The value itself has no effect on the data.
+                "reload_tick": (
+                    IO.INT,
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": INT_MAX,
+                        "step": 1,
+                        "tooltip": "Incremented by the 'Force reload' button to trigger a fresh load (hidden; has no effect on the data).",
+                    },
+                ),
             }
         }
 
@@ -541,8 +556,15 @@ class LoadHuggingFaceDataset(ComfyNodeABC):
         revision: str = "",
         streaming: bool = False,
         limit: int = -1,
+        reload_tick: int = 0,
     ) -> tuple[Any, list[dict[str, Any]]]:
-        """Load the dataset and return ``(dataset, rows)``."""
+        """Load the dataset and return ``(dataset, rows)``.
+
+        ``reload_tick`` is a cache-buster: the frontend "Force reload" button
+        increments it so ComfyUI treats this node as changed and re-fetches the
+        dataset even when every other input stays the same. Its value is
+        otherwise ignored.
+        """
         requested_split = (split or "").strip() or _DEFAULT_SPLIT
         active_split = _resolve_split(
             path=path,
