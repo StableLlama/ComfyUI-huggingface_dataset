@@ -65,17 +65,18 @@ those.
 ## Force reload
 
 The **Force reload** button does two things at once: it re-queries the dataset's
-splits (so the `split` dropdown is in sync) and then forces the loader to
-re-fetch the dataset. ComfyUI caches a node's output on its inputs, so
+splits (so the `split` dropdown is in sync) and marks the loader to re-fetch the
+dataset on the **next run**. ComfyUI caches a node's output on its inputs, so
 re-running a workflow normally reuses the dataset you already loaded — even if
 the source changed on the Hub or on disk. Clicking **Force reload** bumps an
 internal `reload_tick` counter (a hidden input of the node) to invalidate that
-cache and re-runs the workflow so the dataset is fetched fresh.
+cache; the next time you run the workflow the loader fetches the dataset fresh.
 
-Use it after the source dataset has been updated and you want the loader to
-pick up the new rows without having to change `path` / `revision` / … yourself.
-It also replaces the old manual "Refresh splits" button — the split dropdown
-still refreshes automatically when the source inputs change.
+Use it after the source dataset has been updated (for example offline/local
+changes on disk) and you want the loader to pick up the new rows without having
+to change `path` / `revision` / … yourself. It also replaces the old manual
+"Refresh splits" button — the split dropdown still refreshes automatically when
+the source inputs change.
 
 ## Sources
 

@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.1] - 2026-09-11
 
 ### Added
 
@@ -13,10 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   node's output on its inputs, so re-running a workflow normally reuses the
   dataset you already loaded even if the source changed. The button re-queries
   the dataset's splits and bumps an internal `reload_tick` input (hidden in the
-  UI) to invalidate that cache, then re-runs the workflow so the dataset is
-  fetched fresh. It also replaces the previous manual "Refresh splits" button
-  (the split dropdown still refreshes automatically when the source inputs
-  change).
+  UI) to invalidate that cache, so the dataset is fetched fresh on the **next**
+  run (picking up offline/local updates to the source). It also replaces the 
+  previous manual "Refresh splits" button (the split dropdown still refreshes
+  automatically when the source inputs change).
 
 ## [1.1.0] - 2026-09-09
 

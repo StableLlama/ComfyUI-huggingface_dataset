@@ -141,8 +141,8 @@ reuses the dataset you already loaded — even if the source changed on the Hub 
 on disk. The loader has a single **Force reload** button that does two things:
 it re-queries the dataset's splits (so the `split` dropdown is in sync, replacing
 the old manual "Refresh splits" button) and bumps an internal `reload_tick`
-counter (a hidden input) to invalidate the cache, then re-runs the workflow so
-the dataset is fetched fresh.
+counter (a hidden input) to invalidate the cache. The dataset is then fetched
+fresh the next time you run the workflow.
 
 ### Sources
 

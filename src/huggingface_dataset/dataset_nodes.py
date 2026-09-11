@@ -520,9 +520,10 @@ class LoadHuggingFaceDataset(ComfyNodeABC):
                 ),
                 # Cache-buster used by the frontend "Force reload" button. The
                 # frontend hides this widget and increments it on click; because
-                # the value is part of this node's inputs, ComfyUI re-runs the
-                # loader and re-fetches the dataset even when the other inputs
-                # are unchanged. The value itself has no effect on the data.
+                # the value is part of this node's inputs, ComfyUI treats the
+                # loader as changed and re-fetches the dataset on the next run
+                # even when the other inputs are unchanged. The value has no 
+                # effect on the data.
                 "reload_tick": (
                     IO.INT,
                     {
@@ -530,7 +531,7 @@ class LoadHuggingFaceDataset(ComfyNodeABC):
                         "min": 0,
                         "max": INT_MAX,
                         "step": 1,
-                        "tooltip": "Incremented by the 'Force reload' button to trigger a fresh load (hidden; has no effect on the data).",
+                        "tooltip": "Incremented by the 'Force reload' button so the next run triggers a fresh load (hidden; has no effect on the data).",
                     },
                 ),
             }
@@ -562,8 +563,8 @@ class LoadHuggingFaceDataset(ComfyNodeABC):
 
         ``reload_tick`` is a cache-buster: the frontend "Force reload" button
         increments it so ComfyUI treats this node as changed and re-fetches the
-        dataset even when every other input stays the same. Its value is
-        otherwise ignored.
+        dataset on the next run even when every other input stays the same. Its
+        value is otherwise ignored.
         """
         requested_split = (split or "").strip() or _DEFAULT_SPLIT
         active_split = _resolve_split(
