@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-09-13
+
+### Removed
+
+- **Breaking:** the `🤗 Dataset Loader` no longer has a `rows` output or a
+  `limit` widget — it only outputs the opaque `dataset`. `rows` was exactly
+  `dataset` → `To Data List`, but it was materialized on **every** run, even
+  when nothing consumed it, so `Load(huge) → Take(10) → To Data List` paid for
+  the whole dataset. Materializing is now an explicit step: add a
+  `🤗 Dataset To Data List` (or `To LIST`) node behind the loader and bound the
+  rows with `🤗 Dataset Take` / its own `limit`. (Note that the loader's old
+  `limit` only ever capped `rows`, never the `dataset` output.)
+
+### Changed
+
+- **Breaking:** `🤗 Dataset To Data List` and `🤗 Dataset To LIST` now emit
+  values that are valid on their own in ComfyUI: image cells become a
+  single-image `IMAGE` batch (`[1, H, W, C]`, RGB, `0..1`) instead of the raw
+  PIL object, while every other value keeps the previous conversion (numpy 
+  scalars/arrays → plain Python, ...). `column=image` now feeds 
+  `Preview Image` / `Save Image` directly, and images nested in whole-row
+  dicts (`column=""`) work too — `DICT → get (key=image)` returns a usable
+  `IMAGE`. Images with alpha channel are showing an additional (virtual) 
+  column for the mask. The loader itself stays free of torch/numpy.
+
+### Fixed
+
+- Dataset image columns can now be viewed with the standard ComfyUI image
+  nodes. `datasets` hands image cells over as PIL images, which is *not* a
+  ComfyUI `IMAGE`, so feeding such a column into `Preview Image` failed in
+  the past. The conversion nodes now decode PIL images, the undecoded 
+  `{"bytes": ..., "path": ...}` mapping and raw image bytes into an `IMAGE`;
+  non-image `bytes` values keep their previous UTF-8/hex conversion. 
+  JPEG XL data still needs the optional `pillow-jxl-plugin`.
+
 ## [1.1.1] - 2026-09-11
 
 ### Added

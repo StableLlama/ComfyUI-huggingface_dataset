@@ -7,16 +7,14 @@ Add this node from *Hugging Face 🤗 → 🤗 Dataset Loader*.
 ## What it does
 
 The node loads one split of a dataset with the Hugging Face
-[`datasets`](https://huggingface.co/docs/datasets/) library and hands it to the
-rest of the graph in two forms:
+[`datasets`](https://huggingface.co/docs/datasets/) library and hands the raw
+`datasets.Dataset` (or a lazy `datasets.IterableDataset` with `streaming` on) to
+the rest of the graph as an opaque `HUGGINGFACE_DATASET` value.
 
-- **`dataset`** — the raw `datasets.Dataset` of the selected split, exposed as an
-  opaque `HUGGINGFACE_DATASET` value. Feed this into the other *Hugging Face*
-  nodes (**Shuffle**, **Filter**, **To LIST**, …) to shape the dataset *before*
-  its rows are turned into plain data.
-- **`rows`** — a ComfyUI *Data List* of row dicts (one dict per row), capped by
-  `limit`. This connects straight into the *Data List* / *LIST* nodes of packs
-  like **Basic data handling**.
+The node itself materializes nothing: shape the dataset with the other *Hugging
+Face* nodes (**Take**, **Filter**, **Shuffle**, …) and turn it into plain
+ComfyUI data with the conversion nodes (**🤗 Dataset To Data List** /
+**To LIST**). A graph only pays for the rows it actually uses.
 
 ## Inputs
 
@@ -28,14 +26,17 @@ rest of the graph in two forms:
 | `config` | STRING | `""` | Config/subset name for Hub datasets with several configs (e.g. `nyu-mll/glue` + config `mrpc`). |
 | `revision` | STRING | `""` | Optional Hub revision: tag, branch name or commit hash. |
 | `streaming` | BOOLEAN | `false` | Load as a lazy `IterableDataset` instead of downloading/caching the whole split. |
-| `limit` | INT | `-1` | Max rows materialized into the `rows` Data List. `-1` = all. |
 
 ## Outputs
 
 | Output | Type | Description |
 | --- | --- | --- |
 | `dataset` | `HUGGINGFACE_DATASET` | The raw `datasets.Dataset` of the split (an `IterableDataset` when `streaming` is on). |
-| `rows` | `*` (Data List) | List of row dicts, capped by `limit`. |
+
+> [!IMPORTANT]
+> **Upgrading from 1.x:** there is no `rows` output and no `limit` widget any
+> more. Connect the `dataset` output to a **🤗 Dataset To Data List** node and
+> bound the rows with **🤗 Dataset Take** (or the conversion node's `limit`).
 
 ## Split selection
 
@@ -51,16 +52,16 @@ validates the split when it runs — the error message lists the available split
 
 ## Streaming vs. full load
 
-With `streaming` **off** (default) the whole split is downloaded and cached
-before the first rows are materialized; `limit` caps the size of `rows`, but
-*not* the download.
+With `streaming` **off** (default) the whole split is downloaded and cached and
+a `datasets.Dataset` is returned; `Take` / `Filter` / … then work on local data.
 
 With `streaming` **on** the split loads as a lazy `datasets.IterableDataset`:
 nothing is fetched until it is iterated. This is the memory/bandwidth-friendly
-way to pull only the first rows of a very large dataset. Note that the
-`dataset` output is then an `IterableDataset` (no `len()`, single pass) — some
-downstream operations need a fully-loaded dataset, disable `streaming` for
-those.
+way to pull only the first rows of a very large dataset — put a **🤗 Dataset
+Take** (or a `Select` / `Shard`) in front of **🤗 Dataset To Data List**. Note
+that the `dataset` output is then an `IterableDataset` (no `len()`, single pass)
+— some downstream operations need a fully-loaded dataset, disable `streaming`
+for those.
 
 ## Force reload
 
@@ -104,13 +105,15 @@ Loader (path=stanfordnlp/imdb, split=train)
 
 ### Use with Basic data handling
 
-`rows` is already a ComfyUI *Data List*, so the **Basic data handling** pack can
-consume it directly:
+Add a **🤗 Dataset To Data List** (or **To LIST**) node behind the loader; its
+output is a ComfyUI *Data List* that the **Basic data handling** pack can
+consume directly:
 
 - `Data List → length` / `count` — how many rows were materialised.
 - `Data List → get item (index=0)` → `DICT → get (key=text)` — read one field of
   one row.
-- Connect `rows` straight into a `DICT → get`, `STRING` or `cast` node — such
-  nodes run once per row and return a Data List of results (per-row mapping).
+- Connect the Data List straight into a `DICT → get`, `STRING` or `cast` node —
+  such nodes run once per row and return a Data List of results (per-row
+  mapping).
 
 See the README's *Working with Basic data handling* section for more recipes.

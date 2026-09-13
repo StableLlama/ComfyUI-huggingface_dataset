@@ -6,6 +6,8 @@ never import ``datasets``), so small behaviorful stand-ins that mimic the
 ``Dataset`` / ``IterableDataset`` method surface are enough to exercise them.
 """
 
+import io
+import logging
 from typing import Any
 
 import pytest
@@ -226,7 +228,14 @@ def test_op_metadata_shape():
     dataset_nodes = [
         name
         for name in ops.NODE_CLASS_MAPPINGS
-        if name not in ("HFDatasetSplit", "HFDatasetCount", "HFDatasetUnique", "HFDatasetToList", "HFDatasetToDataList")
+        if name
+        not in (
+            "HFDatasetSplit",
+            "HFDatasetCount",
+            "HFDatasetUnique",
+            "HFDatasetToList",
+            "HFDatasetToDataList",
+        )
     ]
     for name in dataset_nodes:
         node_class = ops.NODE_CLASS_MAPPINGS[name]
@@ -637,3 +646,200 @@ def test_transform_rejects_non_dataset():
         ops.HFDatasetShuffle().shuffle(dataset={"text": "x"}, seed=1)
     with pytest.raises(ValueError, match="not a Hugging Face dataset"):
         ops.HFDatasetToList().to_list(dataset=[{"text": "x"}], column="", limit=-1)
+    with pytest.raises(ValueError, match="not a Hugging Face dataset"):
+        ops.HFDatasetToDataList().to_data_list(dataset=[{"row": "x"}], column="", limit=-1)
+
+
+# --------------------------------------------------------------------------- #
+# Image conversion inside the conversion nodes
+# --------------------------------------------------------------------------- #
+
+
+def _image_dataset(size: tuple[int, int] = (4, 3), count: int = 2) -> FakeDataset:
+    """FakeDataset whose ``image`` column holds solid-red PIL images.
+
+    ``size`` is Pillow's ``(width, height)``.
+    """
+    pil_image = pytest.importorskip("PIL.Image")
+    rows = [{"image": pil_image.new("RGB", size, (255, 0, 0)), "label": index} for index in range(count)]
+    return FakeDataset(rows)
+
+
+def _assert_image_item(item: Any, size: tuple[int, int] = (4, 3)) -> Any:
+    """Assert ``item`` is a single-image ComfyUI ``IMAGE`` (a batch of one)."""
+    torch = pytest.importorskip("torch")
+    width, height = size
+    assert isinstance(item, torch.Tensor)
+    assert item.dtype == torch.float32
+    assert tuple(item.shape) == (1, height, width, 3)
+    return item
+
+
+def test_data_list_entries_are_valid_comfyui_images():
+    """Every Data List entry must be valid on its own: here a batch-1 IMAGE."""
+    pytest.importorskip("torch")
+    (items,) = ops.HFDatasetToDataList().to_data_list(dataset=_image_dataset(), column="image", limit=-1)
+    assert len(items) == 2
+    for item in items:
+        image = _assert_image_item(item)
+        assert image[0][0][0].tolist() == pytest.approx([1.0, 0.0, 0.0])
+
+
+def test_to_list_entries_are_valid_comfyui_images():
+    pytest.importorskip("torch")
+    (items,) = ops.HFDatasetToList().to_list(dataset=_image_dataset(count=1), column="image", limit=-1)
+    _assert_image_item(items[0])
+
+
+def test_whole_row_dicts_convert_nested_image_cells():
+    pytest.importorskip("torch")
+    (rows,) = ops.HFDatasetToDataList().to_data_list(dataset=_image_dataset(count=1), column="", limit=-1)
+    assert set(rows[0]) == {"image", "label"}
+    assert rows[0]["label"] == 0
+    _assert_image_item(rows[0]["image"])
+
+
+def test_conversion_keeps_non_image_values_plain():
+    (rows,) = ops.HFDatasetToDataList().to_data_list(dataset=FakeDataset(_rows(2)), column="", limit=-1)
+    assert rows == _rows(2)
+
+
+def test_conversion_honours_limit():
+    pytest.importorskip("torch")
+    (items,) = ops.HFDatasetToDataList().to_data_list(dataset=_image_dataset(count=5), column="image", limit=3)
+    assert len(items) == 3
+
+
+def test_conversion_keeps_native_size_per_entry():
+    """Per-entry images need no common size (no padding, as a single batch would)."""
+    pytest.importorskip("torch")
+    pil_image = pytest.importorskip("PIL.Image")
+    rows = [
+        {"image": pil_image.new("RGB", (2, 4), (255, 0, 0))},
+        {"image": pil_image.new("RGB", (6, 2), (0, 255, 0))},
+    ]
+    (items,) = ops.HFDatasetToDataList().to_data_list(dataset=FakeDataset(rows), column="image", limit=-1)
+    assert tuple(items[0].shape) == (1, 4, 2, 3)
+    assert tuple(items[1].shape) == (1, 2, 6, 3)
+
+
+def test_to_comfy_value_handles_nested_structures():
+    value = ops._to_comfy_value({"a": [1, {"b": b"caf\xc3\xa9"}]})
+    assert value == {"a": [1, {"b": "café"}]}
+
+
+def test_conversion_decodes_lazy_jpeg_xl():
+    """Regression: JPEG XL cells arrive as lazy PIL images (``JXLImageFile``)."""
+    pytest.importorskip("torch")
+    pytest.importorskip("pillow_jxl")
+    pil_image = pytest.importorskip("PIL.Image")
+
+    buffer = io.BytesIO()
+    pil_image.new("RGB", (3, 2), (255, 0, 0)).save(buffer, format="JXL")
+
+    lazy = pil_image.open(io.BytesIO(buffer.getvalue()))
+    assert type(lazy).__name__ == "JXLImageFile"  # a lazy PIL image, not a tensor
+
+    (items,) = ops.HFDatasetToDataList().to_data_list(dataset=FakeDataset([{"image": lazy}]), column="image", limit=-1)
+    image = _assert_image_item(items[0], (3, 2))
+    # JPEG XL is lossy, so allow a small tolerance around pure red.
+    assert image[0][0][0].tolist() == pytest.approx([1.0, 0.0, 0.0], abs=0.06)
+
+
+def test_conversion_decodes_bytes_mapping():
+    pytest.importorskip("torch")
+    pil_image = pytest.importorskip("PIL.Image")
+
+    buffer = io.BytesIO()
+    pil_image.new("RGB", (2, 2), (0, 128, 0)).save(buffer, format="PNG")
+    rows = [{"image": {"bytes": buffer.getvalue(), "path": None}}]
+
+    (items,) = ops.HFDatasetToDataList().to_data_list(dataset=FakeDataset(rows), column="image", limit=-1)
+    image = _assert_image_item(items[0], (2, 2))
+    assert image[0][0][0].tolist() == pytest.approx([0.0, 128 / 255, 0.0])
+
+
+def test_conversion_keeps_non_image_bytes_as_text():
+    rows = [{"blob": b"caf\xc3\xa9"}]
+    (items,) = ops.HFDatasetToDataList().to_data_list(dataset=FakeDataset(rows), column="blob", limit=-1)
+    assert items == ["café"]
+
+
+def test_conversion_validates_column():
+    with pytest.raises(ValueError, match="Unknown column"):
+        ops.HFDatasetToDataList().to_data_list(dataset=_image_dataset(), column="missing", limit=-1)
+
+
+# --------------------------------------------------------------------------- #
+# alpha channels -> virtual mask columns
+# --------------------------------------------------------------------------- #
+
+
+def _rgba_image_dataset(size: tuple[int, int] = (2, 2), count: int = 1, extra: dict[str, Any] | None = None) -> FakeDataset:
+    """FakeDataset whose ``image`` column holds RGBA images with one transparent pixel."""
+    pil_image = pytest.importorskip("PIL.Image")
+    rows: list[dict[str, Any]] = []
+    for index in range(count):
+        image = pil_image.new("RGBA", size, (255, 0, 0, 255))
+        image.putpixel((0, 0), (0, 0, 0, 0))
+        row: dict[str, Any] = {"image": image, "label": index}
+        row.update(extra or {})
+        rows.append(row)
+    return FakeDataset(rows)
+
+
+def test_alpha_is_exposed_as_a_virtual_mask_column():
+    pytest.importorskip("torch")
+    (rows,) = ops.HFDatasetToDataList().to_data_list(dataset=_rgba_image_dataset(), column="", limit=-1)
+    assert set(rows[0]) == {"image", "label", "image_mask"}
+    image = _assert_image_item(rows[0]["image"], (2, 2))
+    # IMAGE stays canonical RGB; alpha is not composited away, it moves to the mask.
+    assert image[0][0][1].tolist() == pytest.approx([1.0, 0.0, 0.0])
+    mask = rows[0]["image_mask"]
+    assert tuple(mask.shape) == (1, 2, 2)
+    # ComfyUI's mask convention: 1 = transparent.
+    assert mask[0][0][0].item() == pytest.approx(1.0)
+    assert mask[0][0][1].item() == pytest.approx(0.0)
+
+
+def test_mask_column_can_be_requested_on_its_own():
+    pytest.importorskip("torch")
+    (masks,) = ops.HFDatasetToDataList().to_data_list(dataset=_rgba_image_dataset(count=2), column="image_mask", limit=-1)
+    assert len(masks) == 2
+    assert tuple(masks[0].shape) == (1, 2, 2)
+
+
+def test_image_column_request_keeps_alpha_out_of_the_image_value():
+    pytest.importorskip("torch")
+    (images,) = ops.HFDatasetToDataList().to_data_list(dataset=_rgba_image_dataset(), column="image", limit=-1)
+    assert tuple(images[0].shape) == (1, 2, 2, 3)  # no 4th channel
+
+
+def test_no_mask_column_for_images_without_alpha():
+    (rows,) = ops.HFDatasetToDataList().to_data_list(dataset=_image_dataset(count=1), column="", limit=-1)
+    assert set(rows[0]) == {"image", "label"}
+
+
+def test_mask_column_name_collision_counts_up(caplog: pytest.LogCaptureFixture) -> None:
+    pytest.importorskip("torch")
+    dataset = _rgba_image_dataset(extra={"image_mask": "already here"})
+    with caplog.at_level(logging.INFO, logger="huggingface_dataset"):
+        (rows,) = ops.HFDatasetToDataList().to_data_list(dataset=dataset, column="", limit=-1)
+    assert set(rows[0]) == {"image", "label", "image_mask", "image_mask1"}
+    assert rows[0]["image_mask"] == "already here"  # the real column always wins
+    assert tuple(rows[0]["image_mask1"].shape) == (1, 2, 2)
+    assert "image_mask1" in caplog.text
+
+
+def test_unknown_column_error_lists_the_virtual_mask_columns():
+    with pytest.raises(ValueError, match="virtual mask columns: image_mask"):
+        ops.HFDatasetToDataList().to_data_list(dataset=_rgba_image_dataset(), column="nope", limit=-1)
+
+
+def test_only_the_requested_column_is_converted(monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(value: Any) -> Any:
+        raise AssertionError("the image column must not be decoded")
+
+    monkeypatch.setattr(ops, "_to_comfy_image", boom)
+    (values,) = ops.HFDatasetToDataList().to_data_list(dataset=_image_dataset(), column="label", limit=-1)
+    assert values == [0, 1]

@@ -15,21 +15,28 @@ and open its help (info) panel, or view the node's page in the **Node Library**
 
 It loads a dataset from the Hugging Face Hub or from local/remote files using the
 [`datasets`](https://huggingface.co/docs/datasets/loading) library and exposes it
-in two forms:
+as an opaque `HUGGINGFACE_DATASET` value:
 
 - **`dataset`** — the raw `datasets.Dataset` object of the selected split (a
   lazy `datasets.IterableDataset` when `streaming` is on), handed to ComfyUI as
   an opaque `HUGGINGFACE_DATASET` value.
-- **`rows`** — a ComfyUI *Data List* of row dicts (one dict per row), so every
-  record can be processed further with generic data-handling nodes, for example
-  from the **Basic data handling** node pack (convert to a ComfyUI `LIST` or
-  `Data List`, access fields, filter, ...).
 
 The pack also ships a set of **processing nodes** that consume the `dataset`
 output and expose the data-wrangling methods of the `datasets` library
 (shuffling, filtering, column selection, ...) as graph nodes, so a dataset can
-be shaped *before* its rows are materialized — see
-[Dataset nodes](#dataset-nodes).
+be shaped *before* it is materialized, plus **conversion nodes** that turn it
+into ComfyUI data:
+
+- **`🤗 Dataset To Data List`** — a ComfyUI *Data List* of row dicts (one per
+  row), so every record can be processed further with generic data-handling
+  nodes, for example from the **Basic data handling** node pack (count, get an
+  item, map per row, ...).
+- **`🤗 Dataset To LIST`** — the same rows as one Python list value.
+
+Every emitted value is valid on its own in ComfyUI: numpy scalars/arrays become
+plain Python, and **image cells become a single-image `IMAGE`** (with alpha, if
+any, exposed as a virtual `<image>_mask` `MASK` column), so an image column can
+be wired straight into `Preview Image` / `Save Image`.
 
 ## Requirements
 
@@ -88,7 +95,11 @@ The `datasets` dependency is installed for you automatically.
 
 ### Load Hugging Face Dataset
 
-Loads a dataset and outputs the loaded `dataset` plus a `rows` Data List.
+Loads a dataset and outputs the raw `dataset` as an opaque
+`HUGGINGFACE_DATASET` value. The loader materializes nothing itself: shape the
+dataset with the transform nodes and turn it into ComfyUI data with the
+conversion nodes (`🤗 Dataset To Data List` / `To LIST`) — see
+[Dataset nodes](#dataset-nodes).
 
 | Input | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -98,12 +109,18 @@ Loads a dataset and outputs the loaded `dataset` plus a `rows` Data List.
 | `config` | STRING | `""` | Config/subset name for Hub datasets that have several configs (e.g. `nyu-mll/glue` + config `mrpc`). |
 | `revision` | STRING | `""` | Optional Hub revision: tag, branch name, or commit hash. |
 | `streaming` | BOOLEAN | `False` | Load the split as a lazy `IterableDataset` instead of downloading/caching it fully. |
-| `limit` | INT | `-1` | Maximum number of rows to materialize into `rows`. `-1` = all rows. |
 
 | Output | Type | Description |
 | --- | --- | --- |
 | `dataset` | `HUGGINGFACE_DATASET` | The raw `datasets.Dataset` of the selected split (or an `IterableDataset` with `streaming` on). |
-| `rows` | `*` (Data List) | List of row dicts (one dict per row), capped by `limit`. |
+
+> [!IMPORTANT]
+> **Upgrading from 1.x:** the loader's `rows` output and its `limit` widget were
+> removed. They were equivalent to `dataset` → `🤗 Dataset To Data List`, but the
+> rows were materialized on every run — even when nothing consumed them. Fix old
+> workflows by connecting the loader's `dataset` output to a
+> `🤗 Dataset To Data List` node and bounding the rows with `🤗 Dataset Take`
+> (or the conversion node's own `limit`).
 
 ### Split selection
 
@@ -126,13 +143,14 @@ exposes:
 ### Streaming vs. full load
 
 With `streaming` off (the default) `datasets` downloads and caches the **whole
-split** before the first `limit` rows are materialized into the `rows` Data
-List - so `limit` caps the size of the returned `rows`, but *not* the download.
-With `streaming` on, the node loads the split as a lazy
+split** and the node returns a `datasets.Dataset`; `Take` / `Filter` / … then
+work on local data. With `streaming` on, the node loads the split as a lazy
 `datasets.IterableDataset` instead: nothing is downloaded until it is iterated,
-which makes it a memory/bandwidth-friendly way to feed only the first `limit`
-rows of a very large dataset into the graph. Note the `dataset` output is then
-an `IterableDataset` (no `len()`, single-pass) rather than a `datasets.Dataset`.
+which makes it a memory/bandwidth-friendly way to feed only the first rows of a
+very large dataset into the graph — put a `🤗 Dataset Take` (or a
+`Select` / `Shard`) in front of the conversion node. Note the `dataset` output is
+then an `IterableDataset` (no `len()`, single-pass) rather than a
+`datasets.Dataset`.
 
 ### Force reload
 
@@ -157,27 +175,30 @@ fresh the next time you run the workflow.
 
 ### Example workflows
 
-Load the IMDb reviews `stanfordnlp/imdb` dataset and count its rows with the
-**Basic data handling** pack (`Basic → Data List → length`):
+Load the IMDb reviews `stanfordnlp/imdb` dataset, materialize them as a *Data
+List* and count the rows with the **Basic data handling** pack
+(`Basic → Data List → length`):
 
 ```mermaid
 flowchart LR
-    A[Load Hugging Face Dataset<br/>path=stanfordnlp/imdb<br/>split=train] -->|rows| B[Data List → length]
+    A[Load Hugging Face Dataset<br/>path=stanfordnlp/imdb<br/>split=train] -->|dataset| D[🤗 Dataset To Data List]
+    D -->|rows| B[Data List → length]
 ```
 
-Take the review text of one specific row — `rows` is a *Data List* of row
-dicts, so first pull a row, then read its `text` field:
+Take the review text of one specific row — a *Data List* holds row dicts, so
+first pull a row, then read its `text` field:
 
 ```mermaid
 flowchart LR
-    A[Load Hugging Face Dataset] -->|rows| B[Data List → get item<br/>index=0]
+    A[Load Hugging Face Dataset] -->|dataset| D[🤗 Dataset To Data List]
+    D -->|rows| B[Data List → get item<br/>index=0]
     B --> C[DICT → get<br/>key=text]
 ```
 
 > [!TIP]
-> `rows` is already a ComfyUI *Data List* — see
-> [Working with Basic data handling](#working-with-basic-data-handling) for many
-> more ways to slice, map and consume it with the **Basic data handling** pack.
+> See [Working with Basic data handling](#working-with-basic-data-handling) for
+> many more ways to slice, map and consume the materialized rows with the
+> **Basic data handling** pack.
 
 ## Dataset nodes
 
@@ -222,10 +243,26 @@ dataset (fully-loaded **or** streaming) can be turned into both:
 | Node | Output | Description |
 | --- | --- | --- |
 | **🤗 Dataset To LIST** | `LIST` | One Python list value of all rows (a *LIST* as Basic data handling defines it, so it feeds `LIST → length`, `LIST → get item`, ...). With a `column` set, the list holds that column's values instead of row dicts. |
-| **🤗 Dataset To Data List** | `*` (Data List) | The same rows exposed as a ComfyUI *Data List* (like the loader's `rows` output): Basic *Data List* nodes receive the whole list in one call, other nodes run once per row. |
+| **🤗 Dataset To Data List** | `*` (Data List) | The same rows exposed as a ComfyUI *Data List*: Basic *Data List* nodes receive the whole list in one call, other nodes run once per row. |
 
 Both honour a `limit` widget (`-1` = all rows) — handy for pulling only the
 first rows of a large streaming dataset.
+
+Every entry they emit is a value that is valid on its own in ComfyUI: numpy
+scalars/arrays become plain Python, and **image cells become a single-image
+`IMAGE`** (a batch of one). `🤗 Dataset To Data List (column=image)` therefore
+feeds `Preview Image` / `Save Image` directly, and row dicts (`column=""`)
+contain image values, so `DICT → get (key=image)` works too.
+
+**Transparency** follows ComfyUI's convention (`IMAGE` is RGB, alpha is a
+separate `MASK` with `1` = transparent): an image column whose cells carry an
+alpha channel additionally gets a virtual column **`<image>_mask`**, so
+`DICT → get (key=image_mask)` feeds `ImageCompositeMasked`,
+`SetLatentNoiseMask`, `GrowMask`, … and `column=image_mask` yields the masks on
+their own. No virtual column is created for images without alpha, and a name
+collision is resolved to `<image>_mask1`, `_mask2`, … (logged on the console).
+Only the requested column is converted, so pulling a text column out of an image
+dataset stays cheap.
 
 ### Example workflow
 
@@ -248,13 +285,15 @@ and more. These Hugging Face nodes hand data to it in the two shapes it already
 understands, so rows can be counted, inspected, mapped and consumed with almost
 no manual conversion:
 
-- **`*` Data List** — one item per row: the loader's `rows` output,
-  `🤗 Dataset To Data List`, and the `values` output of `🤗 Dataset Unique`.
+- **`*` Data List** — one item per row: `🤗 Dataset To Data List`, and the
+  `values` output of `🤗 Dataset Unique`.
 - **`LIST`** — one Python list value: `🤗 Dataset To LIST`.
 
 Rows are plain dicts keyed by the dataset's column names. Values are converted
-to plain Python (numpy scalars/arrays are handled for you); objects such as
-images or audio pass through unchanged. Install the Basic pack from
+into valid ComfyUI values: numpy scalars/arrays become plain Python, and image
+cells become a single-image `IMAGE` (so an image column can be wired straight
+into `Preview Image` / `Save Image`). Other objects (e.g. audio) pass through
+unchanged. Install the Basic pack from
 ComfyUI-Manager or the registry — its nodes appear under the `Basic/…` menus
 (`Basic/Data List`, `Basic/LIST`, `Basic/DICT`, `Basic/STRING`, `Basic/cast`,
 ...).
@@ -277,8 +316,9 @@ Count the loaded rows, and read the review text of the first row:
 
 ```mermaid
 flowchart LR
-    A[Load Hugging Face Dataset<br/>path=stanfordnlp/imdb] -->|rows| L[Data List → length]
-    A -->|rows| G[Data List → get item<br/>index=0]
+    A[Load Hugging Face Dataset<br/>path=stanfordnlp/imdb] -->|dataset| D[🤗 Dataset To Data List]
+    D -->|rows| L[Data List → length]
+    D -->|rows| G[Data List → get item<br/>index=0]
     G --> T[DICT → get<br/>key=text]
 ```
 
@@ -287,11 +327,13 @@ Map every row to one field — pull `text` out of each row with a per-row
 
 ```mermaid
 flowchart LR
-    A[Load Hugging Face Dataset<br/>limit=100] -->|rows| G[DICT → get<br/>key=text]
+    A[Load Hugging Face Dataset] -->|dataset| D[🤗 Dataset To Data List]
+    D -->|rows| G[DICT → get<br/>key=text]
     G --> J[STRING → join (from data list)<br/>separator= ---]
 ```
 
-- **Turn whole rows into text** — `rows` → `Basic/cast → to STRING`, then use any
+- **Turn whole rows into text** — the Data List output of
+  `🤗 Dataset To Data List` → `Basic/cast → to STRING`, then use any
   `Basic/STRING` node.
 - **One column of all rows as a `LIST`** — `🤗 Dataset To LIST (column=text)` →
   `Basic/LIST → length` / `get item` / `first`, or
@@ -301,9 +343,17 @@ flowchart LR
   feed `🤗 Dataset To Data List` / `To LIST` into Basic.
 - **Unique values** — `🤗 Dataset Unique (column=label)` →
   `Basic/Data List → length`, or `Basic/Data List → convert to LIST`.
+- **Preview dataset images** — `🤗 Dataset To Data List (column=image)` →
+  `Preview Image`. `datasets` hands image cells over as PIL images (lazy JPEG XL
+  ones included), which ComfyUI's `IMAGE` input cannot use; the conversion nodes
+  turn each one into a single-image `IMAGE` for you.
+- **Images with transparency** — `column=""` (whole rows) contains both
+  `image` and the virtual `image_mask`; pull each out with a per-row
+  `DICT → get` and use the mask for `ImageCompositeMasked`,
+  `SetLatentNoiseMask`, `GrowMask`, ….
 
-These patterns work for every Data List the pack produces — the loader's `rows`
-as well as any `🤗 Dataset To Data List` fed from a transform chain — and the
+These patterns work for every Data List the pack produces — any
+`🤗 Dataset To Data List` fed from the loader or a transform chain — and the
 `limit` widget (or a `Take` / `Skip`) bounds how many rows are materialised.
 
 ## Example workflow templates

@@ -127,10 +127,9 @@ def test_node_is_registered():
 def test_node_metadata():
     node = _make_node()
     inputs = node.INPUT_TYPES()["required"]
-    assert set(inputs) == {"path", "loader", "split", "config", "revision", "streaming", "limit", "reload_tick"}
-    assert node.RETURN_TYPES[0] == "HUGGINGFACE_DATASET"
-    assert node.RETURN_NAMES == ("dataset", "rows")
-    assert node.OUTPUT_IS_LIST == (False, True)
+    assert set(inputs) == {"path", "loader", "split", "config", "revision", "streaming", "reload_tick"}
+    assert node.RETURN_TYPES == ("HUGGINGFACE_DATASET",)
+    assert node.RETURN_NAMES == ("dataset",)
     assert node.FUNCTION == "load"
     assert callable(getattr(node, node.FUNCTION))
 
@@ -180,10 +179,9 @@ def test_hub_load_default(monkeypatch):
     data = _rows(3)
     fake = _install_fake(monkeypatch, result=FakeDataset(data))
 
-    dataset, rows = _make_node().load(path="myorg/my_dataset")
+    (dataset,) = _make_node().load(path="myorg/my_dataset")
 
     assert dataset._rows == data
-    assert rows == data
     (args, kwargs) = fake.calls[0]
     assert args == ("myorg/my_dataset",)
     assert kwargs == {"split": "train", "streaming": False}
@@ -281,44 +279,33 @@ def test_extension_inference_helper():
 
 
 # --------------------------------------------------------------------------- #
-# rows output
+# the loader materializes nothing - that is the conversion nodes' job
 # --------------------------------------------------------------------------- #
 
 
-def test_limit_caps_rows(monkeypatch):
+def test_loader_returns_the_dataset_object_untouched(monkeypatch):
     data = _rows(5)
-    _install_fake(monkeypatch, result=FakeDataset(data))
+    fake_dataset = FakeDataset(data)
+    _install_fake(monkeypatch, result=fake_dataset)
 
-    _, rows = _make_node().load(path="myorg/my_dataset", limit=2)
+    (dataset,) = _make_node().load(path="myorg/my_dataset")
 
-    assert rows == data[:2]
-
-
-def test_negative_limit_returns_all_rows(monkeypatch):
-    data = _rows(5)
-    _install_fake(monkeypatch, result=FakeDataset(data))
-
-    _, rows = _make_node().load(path="myorg/my_dataset", limit=-1)
-
-    assert rows == data
+    assert dataset is fake_dataset  # not copied, sliced or materialized
 
 
-def test_limit_larger_than_dataset_is_clamped(monkeypatch):
-    data = _rows(3)
-    _install_fake(monkeypatch, result=FakeDataset(data))
-
-    _, rows = _make_node().load(path="myorg/my_dataset", limit=1000)
-
-    assert rows == data
+def test_loader_has_no_rows_output_and_no_limit_input():
+    node = _make_node()
+    assert node.RETURN_NAMES == ("dataset",)
+    assert "limit" not in node.INPUT_TYPES()["required"]
+    assert not hasattr(node, "OUTPUT_IS_LIST")
 
 
-def test_empty_dataset_returns_empty_rows(monkeypatch):
+def test_empty_dataset_loads(monkeypatch):
     _install_fake(monkeypatch, result=FakeDataset([]))
 
-    dataset, rows = _make_node().load(path="myorg/my_dataset")
+    (dataset,) = _make_node().load(path="myorg/my_dataset")
 
     assert len(dataset) == 0
-    assert rows == []
 
 
 # --------------------------------------------------------------------------- #
@@ -330,39 +317,20 @@ def test_streaming_forwards_flag_and_returns_iterable(monkeypatch):
     data = _rows(3)
     fake = _install_fake(monkeypatch, result=FakeIterableDataset(data))
 
-    dataset, rows = _make_node().load(path="myorg/my_dataset", streaming=True)
+    (dataset,) = _make_node().load(path="myorg/my_dataset", streaming=True)
 
     assert isinstance(dataset, FakeIterableDataset)
-    assert rows == data
     (_, kwargs) = fake.calls[0]
     assert kwargs == {"split": "train", "streaming": True}
-
-
-def test_streaming_limit_caps_rows(monkeypatch):
-    data = _rows(5)
-    _install_fake(monkeypatch, result=FakeIterableDataset(data))
-
-    _, rows = _make_node().load(path="myorg/my_dataset", streaming=True, limit=2)
-
-    assert rows == data[:2]
-
-
-def test_streaming_zero_limit_returns_no_rows(monkeypatch):
-    _install_fake(monkeypatch, result=FakeIterableDataset(_rows(5)))
-
-    _, rows = _make_node().load(path="myorg/my_dataset", streaming=True, limit=0)
-
-    assert rows == []
 
 
 def test_streaming_off_uses_materialized_dataset(monkeypatch):
     data = _rows(3)
     fake = _install_fake(monkeypatch, result=FakeDataset(data))
 
-    dataset, rows = _make_node().load(path="myorg/my_dataset", streaming=False)
+    (dataset,) = _make_node().load(path="myorg/my_dataset", streaming=False)
 
     assert isinstance(dataset, FakeDataset)
-    assert rows == data
     (_, kwargs) = fake.calls[0]
     assert kwargs["streaming"] is False
 

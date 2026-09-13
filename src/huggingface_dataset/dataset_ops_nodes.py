@@ -22,13 +22,27 @@ Two kinds of nodes live here:
   a Basic-data-handling ``LIST`` (one Python list value) or a ComfyUI *Data
   List* (``OUTPUT_IS_LIST``) of row dicts - or of a single column's values when
   a ``column`` is given - so rows can be processed further with the nodes of
-  the **Basic data handling** pack.
+  the **Basic data handling** pack. Image cells become ComfyUI ``IMAGE``
+  batches of one, so an image entry is valid on its own and can also be wired
+  straight into the image nodes.
 
 Because the objects are opaque and the operations are exposed declaratively
 (widgets, no free-form Python), none of these nodes need to import the
 ``datasets`` package itself: they only call methods on the object they receive.
+
+The conversion nodes make sure every value they hand out is valid on its own in
+ComfyUI: ``datasets`` hands image cells over as PIL images (lazy JPEG XL ones
+included), which ComfyUI's image nodes cannot consume, so those become a regular
+ComfyUI ``IMAGE`` batch of one (``[1, H, W, C]``) - built with the
+Pillow/numpy/torch stack ComfyUI already ships, imported lazily. An image column
+whose cells carry an alpha channel additionally gets a virtual
+``<column>_mask`` field holding the alpha as a real ComfyUI ``MASK`` (``1`` =
+transparent), so transparency is never lost silently and no non-standard
+4-channel trick is needed.
 """
 
+import io
+import logging
 from inspect import cleandoc
 from typing import Any
 
@@ -79,6 +93,9 @@ _FILTER_VALUE_OPS = (
 
 #: Operations for adding/replacing a column in the map node.
 _COLUMN_OPS = ("constant", "copy column", "row index")
+
+#: Logger used for user-facing notes (e.g. a renamed virtual mask column).
+_LOGGER = logging.getLogger("huggingface_dataset")
 
 
 # --------------------------------------------------------------------------- #
@@ -330,29 +347,66 @@ def _build_filter_predicate(column: str, operator: str, value: str) -> Any:
     raise ValueError(f"Unknown filter operator {operator!r}.")
 
 
-def _materialize(dataset: Any, limit: int = -1) -> list[dict[str, Any]]:
-    """Materialize up to ``limit`` rows of a dataset (either kind) as row dicts."""
+def _identity(value: Any) -> Any:
+    """Return ``value`` unchanged - the "materialize raw values" conversion."""
+    return value
+
+
+def _raw_rows(dataset: Any, limit: int = -1) -> list[dict[str, Any]]:
+    """Materialize up to ``limit`` rows of a dataset (either kind), values left raw.
+
+    The conversion nodes need the untouched cells: an image cell becomes an
+    ``IMAGE`` *and* - when it carries an alpha channel - a ``MASK``, which can
+    only be decided from the cell itself.
+    """
     if _is_streaming(dataset):
-        return _materialize_rows_stream(dataset, limit)
-    return _materialize_rows(dataset, limit)
+        return _materialize_rows_stream(dataset, limit, convert=_identity)
+    return _materialize_rows(dataset, limit, convert=_identity)
+
+
+def _column_help(dataset: Any, masks: dict[str, str]) -> str:
+    """Describe the columns a user may ask for, including the virtual mask ones."""
+    available = _columns(dataset) or []
+    listed = ", ".join(available) or "unknown"
+    if masks:
+        virtual = ", ".join(sorted(masks.values()))
+        return f"this dataset has columns: {listed} (virtual mask columns: {virtual})."
+    return f"this dataset has columns: {listed}."
 
 
 def _materialize_values(dataset: Any, column: str, limit: int) -> list[Any]:
-    """Materialize rows and, when ``column`` is set, reduce them to that column."""
-    rows = _materialize(dataset, limit)
-    column = (column or "").strip()
-    if not column:
-        return rows
+    """Materialize up to ``limit`` values: whole rows, one column, or a virtual mask column.
+
+    Without a ``column`` each row dict is returned with its values converted
+    (image cells become ``IMAGE``, and an image column that carries an alpha
+    channel additionally gets a virtual ``<column>_mask`` entry holding the
+    ``MASK``). With a ``column`` only that column's values are converted, so
+    asking for a text column of an image dataset stays cheap; ``column`` may
+    also name a virtual mask column to get that column's masks.
+    """
+    active_column = (column or "").strip()
+    rows = _raw_rows(dataset, limit)
+    masks = _mask_columns(rows)
+    if not active_column:
+        return _convert_rows(rows, masks)
+
+    if active_column in masks:
+        # A real image column with alpha: its (RGB) images, the mask lives in the virtual column.
+        return [_to_comfy_image(row[active_column]) for row in rows]
+
     available = _columns(dataset)
-    if available is not None and column not in available:
-        listed = ", ".join(available)
-        raise ValueError(f"Unknown column {column!r}: this dataset has columns: {listed}.")
+    if available is not None and active_column not in available:
+        base = next((image_column for image_column, mask_name in masks.items() if mask_name == active_column), None)
+        if base is not None:
+            return [_to_comfy_mask(row[base]) for row in rows]
+        raise ValueError(f"Unknown column {active_column!r}: {_column_help(dataset, masks)}")
+
     values: list[Any] = []
     for index, row in enumerate(rows):
-        if column not in row:
+        if active_column not in row:
             listed = ", ".join(str(key) for key in row) or "unknown"
-            raise ValueError(f"Row {index} has no column {column!r}. Available columns there: {listed}.")
-        values.append(row[column])
+            raise ValueError(f"Row {index} has no column {active_column!r}. Available columns there: {listed}.")
+        values.append(_to_comfy_value(row[active_column]))
     return values
 
 
@@ -1104,6 +1158,15 @@ class HFDatasetToList(ComfyNodeABC):
     ``List get item``, etc. Without a ``column`` each item is a row dict; with a
     ``column`` each item is that column's value. ``limit`` caps how many rows are
     materialized (``-1`` = all). Works on fully-loaded and streaming datasets.
+
+    Every item is converted into a value that is valid on its own in ComfyUI:
+    numpy scalars/arrays become plain Python, image cells (PIL images - lazy
+    JPEG XL ones included - undecoded ``{"bytes": ..., "path": ...}`` mappings,
+    or raw encoded bytes) become a single-image ``IMAGE`` batch, and an image
+    column whose cells carry an alpha channel additionally gets a virtual
+    ``<column>_mask`` entry holding the alpha as a ``MASK`` (``1`` =
+    transparent). Only the requested column is converted, so asking for a text
+    column of an image dataset stays cheap.
     """
 
     @classmethod
@@ -1119,7 +1182,7 @@ class HFDatasetToList(ComfyNodeABC):
                     {
                         "default": "",
                         "multiline": False,
-                        "tooltip": "When set, each list item is that column's value instead of a whole row dict.",
+                        "tooltip": "When set, each list item is that column's value instead of a whole row dict (a virtual '<image>_mask' column can be requested too).",
                     },
                 ),
                 "limit": (
@@ -1152,10 +1215,20 @@ class HFDatasetToDataList(ComfyNodeABC):
 
     Materializes the dataset as a *Data List* of items - one item per row
     (or one value per row of ``column`` when one is given) - the same shape the
-    loader's ``rows`` output has. Downstream *Data List* nodes of the **Basic
-    data handling** pack receive the whole list in one call, while other nodes
-    run once per item. ``limit`` caps how many rows are materialized (``-1`` =
-    all). Works on fully-loaded and streaming datasets.
+    loader's ``dataset`` output has once materialized. Downstream *Data List*
+    nodes of the **Basic data handling** pack receive the whole list in one
+    call, while other nodes run once per item. ``limit`` caps how many rows are
+    materialized (``-1`` = all). Works on fully-loaded and streaming datasets.
+
+    Every item is converted into a value that is valid on its own in ComfyUI:
+    numpy scalars/arrays become plain Python, image cells (PIL images - lazy
+    JPEG XL ones included - undecoded ``{"bytes": ..., "path": ...}`` mappings,
+    or raw encoded bytes) become a single-image ``IMAGE`` batch, so an image
+    entry can be wired straight into the image nodes. An image column whose cells
+    carry an alpha channel additionally gets a virtual ``<column>_mask`` entry
+    holding the alpha as a ``MASK`` (``1`` = transparent), and a name collision
+    with an existing column is resolved to ``<column>_mask1``, ``_mask2``, ...
+    (logged on the console).
     """
 
     @classmethod
@@ -1171,7 +1244,7 @@ class HFDatasetToDataList(ComfyNodeABC):
                     {
                         "default": "",
                         "multiline": False,
-                        "tooltip": "When set, each item is that column's value instead of a whole row dict.",
+                        "tooltip": "When set, each item is that column's value instead of a whole row dict (a virtual '<image>_mask' column can be requested too).",
                     },
                 ),
                 "limit": (
@@ -1198,6 +1271,224 @@ class HFDatasetToDataList(ComfyNodeABC):
     def to_data_list(self, dataset: Any, column: str, limit: int) -> tuple[list[Any]]:
         _require_method(dataset, "map")
         return (_materialize_values(dataset, column, int(limit)),)
+
+
+# --------------------------------------------------------------------------- #
+# Image conversion
+# --------------------------------------------------------------------------- #
+
+
+def _require_numpy() -> Any:
+    """Import and return ``numpy`` (lazy import; ComfyUI always ships it)."""
+    try:
+        import numpy  # noqa: PLC0415 - deliberately imported lazily
+    except ImportError as exc:  # pragma: no cover - ComfyUI always ships numpy
+        raise ImportError("The 'numpy' package is required to convert dataset images into ComfyUI images.") from exc
+    return numpy
+
+
+def _require_torch() -> Any:
+    """Import and return ``torch`` (lazy import; ComfyUI always ships it)."""
+    try:
+        import torch  # noqa: PLC0415 - deliberately imported lazily
+    except ImportError as exc:  # pragma: no cover - ComfyUI always ships torch
+        raise ImportError("ComfyUI's 'torch' package is required to convert dataset images into ComfyUI images.") from exc
+    return torch
+
+
+#: Cached ``PIL.Image.Image`` class (imported on first use, see :func:`_is_pil_image`).
+_PIL_IMAGE_TYPE: Any = None
+
+
+def _pil_image_from(value: Any) -> Any:
+    """Return a PIL image for a dataset image cell.
+
+    Handles every shape ``datasets`` produces for an image column: a decoded
+    PIL image (lazy formats such as JPEG XL included, opened through
+    ``pillow-jxl-plugin``), the undecoded ``{"bytes": ..., "path": ...}``
+    mapping, and raw encoded image bytes.
+    """
+    from PIL import Image  # noqa: PLC0415 - Pillow ships with ComfyUI/datasets
+
+    if isinstance(value, Image.Image):
+        return value
+
+    raw: Any = None
+    if isinstance(value, dict):
+        raw = value.get("bytes")
+        if raw is None and value.get("path"):
+            return Image.open(value["path"])
+    else:
+        raw = value
+    if not isinstance(raw, (bytes, bytearray, memoryview)):
+        raise ValueError(f"Cannot read an image from a {type(value).__name__}.")
+    return Image.open(io.BytesIO(bytes(raw)))
+
+
+def _is_image_mapping(value: Any) -> bool:
+    """Whether ``value`` is an undecoded image cell (``{"bytes": .., "path": ..}``)."""
+    return (
+        isinstance(value, dict)
+        and set(value) <= {"bytes", "path"}
+        and (isinstance(value.get("bytes"), (bytes, bytearray, memoryview)) or bool(value.get("path")))
+    )
+
+
+def _is_pil_image(value: Any) -> bool:
+    """Whether ``value`` is a PIL image (importing Pillow only when needed)."""
+    global _PIL_IMAGE_TYPE
+    if _PIL_IMAGE_TYPE is None:
+        from PIL import Image  # noqa: PLC0415 - Pillow ships with ComfyUI/datasets
+
+        _PIL_IMAGE_TYPE = Image.Image
+    return isinstance(value, _PIL_IMAGE_TYPE)
+
+
+def _to_comfy_image_and_mask(value: Any) -> tuple[Any, Any]:
+    """Decode one image cell into a ComfyUI ``IMAGE`` batch of one and its ``MASK``.
+
+    Returns ``([1, H, W, 3]`` float RGB ``0..1``, ``[1, H, W]`` float mask)``.
+    The mask follows ComfyUI's convention - ``1`` = transparent - the same one
+    ``LoadImage`` and ``SplitImageWithAlpha`` use, so it can be fed straight
+    into the ``MASK`` inputs (``ImageCompositeMasked``, ``SetLatentNoiseMask``,
+    ``GrowMask``, ...).
+    """
+    numpy = _require_numpy()
+    torch = _require_torch()
+    try:
+        image = _pil_image_from(value)
+        # ``numpy.array`` copies: Pillow hands out read-only buffers, which
+        # ``torch.from_numpy`` cannot wrap.
+        array = numpy.array(image.convert("RGBA"), dtype=numpy.uint8)
+    except Exception as exc:  # noqa: BLE001 - surface a friendly decode error
+        raise ValueError(
+            f"Could not decode a dataset image: {exc}. For JPEG XL images install the optional "
+            "'pillow-jxl-plugin' (pip install pillow-jxl-plugin)."
+        ) from exc
+    rgba = torch.from_numpy(array)
+    images = rgba[..., :3].to(torch.float32).unsqueeze(0) / 255.0
+    masks = (1.0 - rgba[..., 3].to(torch.float32) / 255.0).unsqueeze(0)
+    return (images, masks)
+
+
+def _to_comfy_image(value: Any) -> Any:
+    """Decode one image cell into a ComfyUI ``IMAGE`` batch of one (RGB).
+
+    The alpha channel - when there is one - is *not* dropped silently: it is
+    exposed as its own virtual ``<column>_mask`` value (see
+    :func:`_mask_columns`).
+    """
+    return _to_comfy_image_and_mask(value)[0]
+
+
+def _to_comfy_mask(value: Any) -> Any:
+    """Decode one image cell into its ComfyUI ``MASK`` (``[1, H, W]``, ``1`` = transparent)."""
+    return _to_comfy_image_and_mask(value)[1]
+
+
+def _is_image_cell(value: Any) -> bool:
+    """Whether a raw dataset value is an image (PIL image, mapping, or encoded bytes)."""
+    if value is None:
+        return False
+    if _is_pil_image(value) or _is_image_mapping(value):
+        return True
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        try:
+            _pil_image_from(value)
+        except Exception:  # noqa: BLE001 - just not an image
+            return False
+        return True
+    return False
+
+
+def _image_has_alpha(value: Any) -> bool:
+    """Whether an image cell carries an alpha channel."""
+    try:
+        image = _pil_image_from(value)
+        return "A" in image.getbands() or bool(getattr(image, "info", {}).get("transparency"))
+    except Exception:  # noqa: BLE001 - not an image / not decodable
+        return False
+
+
+def _mask_columns(rows: list[dict[str, Any]]) -> dict[str, str]:
+    """Map each image column that carries transparency to its virtual mask column name.
+
+    The name is ``<column>_mask``. When the dataset already has a column of that
+    name (or another virtual column claimed it) a counter is appended -
+    ``<column>_mask1``, ``<column>_mask2``, ... - and the chosen name is logged
+    to the ComfyUI console, because a workflow has to use it explicitly.
+    """
+    if not rows:
+        return {}
+    taken: set[str] = set()
+    for row in rows:
+        taken.update(row)
+
+    masks: dict[str, str] = {}
+    for column in rows[0]:
+        images = [cell for cell in (row.get(column) for row in rows) if _is_image_cell(cell)]
+        if not images or not any(_image_has_alpha(cell) for cell in images):
+            continue
+        name = f"{column}_mask"
+        counter = 1
+        while name in taken:
+            name = f"{column}_mask{counter}"
+            counter += 1
+        if name != f"{column}_mask":
+            _LOGGER.info(
+                "Another column is already named %r, so the alpha mask of %r is exposed as %r instead.",
+                f"{column}_mask",
+                column,
+                name,
+            )
+        taken.add(name)
+        masks[column] = name
+    return masks
+
+
+def _convert_rows(rows: list[dict[str, Any]], masks: dict[str, str]) -> list[dict[str, Any]]:
+    """Convert raw rows into ComfyUI-valid values, adding the virtual mask columns."""
+    converted: list[dict[str, Any]] = []
+    for row in rows:
+        out: dict[str, Any] = {}
+        for key, value in row.items():
+            mask_name = masks.get(key)
+            if mask_name is None:
+                out[key] = _to_comfy_value(value)
+            else:
+                out[key], out[mask_name] = _to_comfy_image_and_mask(value)
+        converted.append(out)
+    return converted
+
+
+def _to_comfy_value(value: Any) -> Any:
+    """Convert a materialized dataset value into ComfyUI-usable values.
+
+    Does everything :func:`_to_python` does (numpy scalars/arrays, nested
+    lists/dicts, ...) and additionally turns image cells into a ComfyUI
+    ``IMAGE`` batch of one: a decoded PIL image (lazy JPEG XL ones included),
+    the ``{"bytes": ..., "path": ...}`` mapping of an undecoded image cell, or
+    raw encoded image bytes. Every *Data List* / *LIST* entry therefore stays
+    valid on its own, so an image entry can be wired straight into the image
+    nodes.
+
+    Bytes that are not an image keep the previous behaviour (UTF-8 text or a hex
+    string) via :func:`_to_python`.
+    """
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
+    if _is_pil_image(value) or _is_image_mapping(value):
+        return _to_comfy_image(value)
+    if isinstance(value, dict):
+        return {key: _to_comfy_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_to_comfy_value(item) for item in value]
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        try:
+            return _to_comfy_image(value)
+        except ValueError:
+            return _to_python(value)
+    return _to_python(value)
 
 
 NODE_CLASS_MAPPINGS = {

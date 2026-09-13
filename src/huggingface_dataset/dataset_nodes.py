@@ -1,15 +1,12 @@
 """ComfyUI node that loads a Hugging Face dataset and makes it available in ComfyUI.
 
-The loaded dataset is exposed in two forms:
-
-* ``dataset``  - the raw object returned by :func:`datasets.load_dataset` (a
-  :class:`datasets.Dataset`, or a :class:`datasets.IterableDataset` when
-  ``streaming`` is enabled, for a single split). It is handed to ComfyUI as an
-  opaque ``HUGGINGFACE_DATASET`` value that other nodes can consume.
-* ``rows``     - the rows of the selected split materialized as a ComfyUI
-  *Data List* (a Python ``list`` of ``dict`` rows), so each record can be
-  processed further with generic data-handling nodes (for example the
-  "Basic data handling" node pack).
+The node is a thin wrapper around :func:`datasets.load_dataset`: it hands the
+raw object it returns (a :class:`datasets.Dataset`, or a
+:class:`datasets.IterableDataset` when ``streaming`` is enabled) to ComfyUI as
+an opaque ``HUGGINGFACE_DATASET`` value that the other nodes of this pack
+consume. Turning the data into plain ComfyUI values is a separate, explicit
+step: the conversion nodes (``HFDatasetToList`` / ``HFDatasetToDataList``)
+materialize rows as a *LIST* or a ComfyUI *Data List*.
 
 Loading is delegated to the `datasets <https://huggingface.co/docs/datasets>`_
 library (``datasets.load_dataset``), which is imported lazily so that ComfyUI
@@ -17,7 +14,7 @@ keeps starting even when the dependency is not installed yet.
 """
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from inspect import cleandoc
 from itertools import islice
@@ -397,11 +394,12 @@ def _load_dataset(
         return datasets.load_dataset(path, **kwargs)
 
 
-def _materialize_rows(dataset: Any, limit: int = -1) -> list[dict[str, Any]]:
+def _materialize_rows(dataset: Any, limit: int = -1, convert: Callable[[Any], Any] = _to_python) -> list[dict[str, Any]]:
     """Return up to ``limit`` rows of ``dataset`` as a list of plain dicts.
 
     A negative ``limit`` (or ``None``) returns every row. Rows are fetched as a
-    single batched slice (column-wise), then re-joined into per-row dicts.
+    single batched slice (column-wise), then re-joined into per-row dicts and
+    converted with ``convert`` (defaults to :func:`_to_python`).
     """
     length = len(dataset)
     stop = length if limit is None or limit < 0 else min(int(limit), length)
@@ -409,19 +407,20 @@ def _materialize_rows(dataset: Any, limit: int = -1) -> list[dict[str, Any]]:
         return []
     batch = dataset[:stop]  # dict of column name -> list of values
     columns = list(batch.keys())
-    return [{column: _to_python(batch[column][index]) for column in columns} for index in range(stop)]
+    return [{column: convert(batch[column][index]) for column in columns} for index in range(stop)]
 
 
-def _materialize_rows_stream(dataset: Any, limit: int = -1) -> list[dict[str, Any]]:
+def _materialize_rows_stream(dataset: Any, limit: int = -1, convert: Callable[[Any], Any] = _to_python) -> list[dict[str, Any]]:
     """Return up to ``limit`` rows from a streaming ``IterableDataset``.
 
     ``datasets.IterableDataset`` (what :func:`datasets.load_dataset` returns with
     ``streaming=True``) has no ``len()`` and cannot be sliced, so rows are pulled
-    by iterating and each row dict is converted with :func:`_to_python`. A
-    negative ``limit`` (or ``None``) consumes the whole stream.
+    by iterating and each row dict is converted with ``convert`` (defaults to
+    :func:`_to_python`). A negative ``limit`` (or ``None``) consumes the whole
+    stream.
     """
     stream = islice(dataset, int(limit)) if limit is not None and limit >= 0 else dataset
-    return [{key: _to_python(value) for key, value in row.items()} for row in stream]
+    return [{key: convert(value) for key, value in row.items()} for row in stream]
 
 
 class LoadHuggingFaceDataset(ComfyNodeABC):
@@ -443,18 +442,18 @@ class LoadHuggingFaceDataset(ComfyNodeABC):
         returns a ``datasets.Dataset``.
       - **Streaming** (``streaming`` on) returns a lazily-loaded
         ``datasets.IterableDataset`` instead; data files are only fetched as the
-        dataset is iterated, so no full download/cache happens. Ideal for very
-        large datasets when only the first ``limit`` rows are needed as a
-        *Data List*.
+        dataset is iterated, so no full download/cache happens.
 
-    Outputs:
+    Output:
       - ``dataset``: the raw ``datasets.Dataset`` (or
         ``datasets.IterableDataset`` when ``streaming`` is on) of the selected
         split. It is passed to ComfyUI as an opaque ``HUGGINGFACE_DATASET``
         value; consumer nodes must handle both types.
-      - ``rows``: a *Data List* of row dicts (one dict per row) ready for further
-        processing with generic data-handling nodes. ``limit`` caps how many
-        rows are materialized (``-1`` = all).
+
+    The node deliberately materializes nothing itself - use the conversion
+    nodes (``🤗 Dataset To Data List`` / ``To LIST``) for that, after shaping the
+    dataset with the transform nodes (``Take``/``Filter``/...). A graph then
+    only pays for the rows it actually uses.
     """
 
     @classmethod
@@ -508,16 +507,6 @@ class LoadHuggingFaceDataset(ComfyNodeABC):
                         "tooltip": "Load the split lazily as an IterableDataset instead of downloading/caching it fully.",
                     },
                 ),
-                "limit": (
-                    IO.INT,
-                    {
-                        "default": -1,
-                        "min": -1,
-                        "max": INT_MAX,
-                        "step": 1,
-                        "tooltip": "Maximum number of rows to materialize into the 'rows' Data List; -1 = all.",
-                    },
-                ),
                 # Cache-buster used by the frontend "Force reload" button. The
                 # frontend hides this widget and increments it on click; because
                 # the value is part of this node's inputs, ComfyUI treats the
@@ -537,12 +526,10 @@ class LoadHuggingFaceDataset(ComfyNodeABC):
             }
         }
 
-    RETURN_TYPES = ("HUGGINGFACE_DATASET", IO.ANY)
-    RETURN_NAMES = ("dataset", "rows")
-    OUTPUT_IS_LIST = (False, True)
+    RETURN_TYPES = ("HUGGINGFACE_DATASET",)
+    RETURN_NAMES = ("dataset",)
     OUTPUT_TOOLTIPS = (
         "Raw datasets.Dataset of the split (a streaming IterableDataset with 'streaming' on); feed it into the 🤗 dataset nodes.",
-        "ComfyUI Data List of row dicts (one dict per row), capped by 'limit'.",
     )
     CATEGORY = "Hugging Face 🤗"
     DESCRIPTION = cleandoc(__doc__ or "")
@@ -556,10 +543,9 @@ class LoadHuggingFaceDataset(ComfyNodeABC):
         config: str = "",
         revision: str = "",
         streaming: bool = False,
-        limit: int = -1,
         reload_tick: int = 0,
-    ) -> tuple[Any, list[dict[str, Any]]]:
-        """Load the dataset and return ``(dataset, rows)``.
+    ) -> tuple[Any]:
+        """Load the dataset and return ``(dataset,)``.
 
         ``reload_tick`` is a cache-buster: the frontend "Force reload" button
         increments it so ComfyUI treats this node as changed and re-fetches the
@@ -574,19 +560,16 @@ class LoadHuggingFaceDataset(ComfyNodeABC):
             config=config,
             revision=revision,
         )
-        dataset = _load_dataset(
-            path=path,
-            loader=loader,
-            split=active_split,
-            config=config,
-            revision=revision,
-            streaming=streaming,
+        return (
+            _load_dataset(
+                path=path,
+                loader=loader,
+                split=active_split,
+                config=config,
+                revision=revision,
+                streaming=streaming,
+            ),
         )
-        if streaming:
-            rows = _materialize_rows_stream(dataset, limit)
-        else:
-            rows = _materialize_rows(dataset, limit)
-        return (dataset, rows)
 
 
 NODE_CLASS_MAPPINGS = {
