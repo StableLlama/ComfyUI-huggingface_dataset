@@ -511,14 +511,20 @@ class LoadHuggingFaceDataset(ComfyNodeABC):
                 # frontend hides this widget and increments it on click; because
                 # the value is part of this node's inputs, ComfyUI treats the
                 # loader as changed and re-fetches the dataset on the next run
-                # even when the other inputs are unchanged. The value has no 
+                # even when the other inputs are unchanged. The value has no
                 # effect on the data.
+                #
+                # Deliberately unbounded (no ``min``/``max``): ComfyUI restores
+                # a saved workflow's ``widgets_values`` *positionally*, so a
+                # workflow saved before 2.0.0 - when the loader still had a
+                # ``limit`` widget in front of this one - hands that widget's
+                # value (``-1`` by default) to ``reload_tick``. A range check
+                # would then make ComfyUI refuse to run the whole workflow
+                # ("Input out of range") although the value is never read.
                 "reload_tick": (
                     IO.INT,
                     {
                         "default": 0,
-                        "min": 0,
-                        "max": INT_MAX,
                         "step": 1,
                         "tooltip": "Incremented by the 'Force reload' button so the next run triggers a fresh load (hidden; has no effect on the data).",
                     },

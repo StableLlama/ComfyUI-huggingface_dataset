@@ -8,7 +8,10 @@
 //   is loaded / the node is configured;
 // * a single "Force reload" button re-queries the splits and bumps the hidden
 //   `reload_tick` input so the *next* queue re-loads the data fresh even when
-//   the other inputs are unchanged.
+//   the other inputs are unchanged;
+// * a workflow saved with an older widget list is repaired on load
+//   (`restoreNamedWidgetValues`), so for example a workflow from before 2.0.0 -
+//   when the loader still had a `limit` widget - opens and runs.
 //
 // The values below must stay in sync with `_DEFAULT_SPLIT` / `_FALLBACK_SPLITS`
 // in src/huggingface_dataset/dataset_nodes.py.
@@ -25,6 +28,27 @@ const TRIGGER_INPUTS = ["path", "loader", "config", "revision"];
 
 function findWidget(node, name) {
   return (node.widgets || []).find((widget) => widget.name === name) || null;
+}
+
+// ComfyUI restores a saved workflow's `widgets_values` *positionally* - one
+// value per widget, in the order the node's widgets exist today. As soon as a
+// node's widget list changes (2.0.0 removed the loader's `limit` widget, which
+// shifted every value behind it) that puts values on the wrong widgets: the
+// stale `limit` (default -1) landed in `reload_tick`, so ComfyUI refused to
+// queue the workflow ("Input out of range ... below the minimum 0").
+//
+// The same workflows also store `widgets_values_named`, which is authoritative
+// (ComfyUI itself only uses it behind its not-yet-enabled
+// `LiteGraph.namedValuesRestore` flag), so re-apply it here by name. Entries
+// without a matching widget (e.g. the removed `limit`) are simply ignored.
+function restoreNamedWidgetValues(node, info) {
+  const named = info?.widgets_values_named;
+  if (!named || typeof named !== "object") return;
+  for (const widget of node.widgets || []) {
+    if (!widget) continue; // ComfyUI tolerates holes in the widget list
+    if (widget.serialize === false || !(widget.name in named)) continue;
+    widget.value = named[widget.name];
+  }
 }
 
 // The part of a split value before any `datasets` slicing suffix
@@ -201,9 +225,12 @@ app.registerExtension({
 
     // Refresh again once a saved workflow has been applied, so the dropdown
     // reflects the values that were just loaded (path/config/revision/...).
+    // ComfyUI restored the widget values (positionally) before this hook, so
+    // repair a widget list that changed since the workflow was saved first.
     const onConfigure = nodeType.prototype.onConfigure;
     nodeType.prototype.onConfigure = function (...args) {
       const result = onConfigure ? onConfigure.apply(this, args) : undefined;
+      restoreNamedWidgetValues(this, args[0]);
       hookUpNode(this);
       scheduleRefresh(this);
       return result;

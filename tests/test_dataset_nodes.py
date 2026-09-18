@@ -300,6 +300,27 @@ def test_loader_has_no_rows_output_and_no_limit_input():
     assert not hasattr(node, "OUTPUT_IS_LIST")
 
 
+def test_reload_tick_tolerates_values_from_pre_2_0_workflows(monkeypatch):
+    """A stale cache-buster must never block a saved workflow.
+
+    ComfyUI restores a workflow's ``widgets_values`` positionally, so workflows
+    saved while the loader still had its ``limit`` widget hand that widget's
+    value (``-1`` by default) to ``reload_tick``. A declared range would make
+    ComfyUI reject the workflow ("Input out of range") even though the value is
+    never read.
+    """
+    options = _make_node().INPUT_TYPES()["required"]["reload_tick"][1]
+    assert "min" not in options
+    assert "max" not in options
+
+    fake_dataset = FakeDataset(_rows(2))
+    _install_fake(monkeypatch, result=fake_dataset)
+
+    (dataset,) = _make_node().load(path="myorg/my_dataset", reload_tick=-1)
+
+    assert dataset is fake_dataset
+
+
 def test_empty_dataset_loads(monkeypatch):
     _install_fake(monkeypatch, result=FakeDataset([]))
 
